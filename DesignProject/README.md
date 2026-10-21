@@ -63,10 +63,10 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 **Firmware / Software**
 - Arduino (C++) via Arduino IDE
 - Arduino libraries: [libraries include LINES, e.g. LoRa, BH1750, WiFi, etc.]
-- Dashboard: [HTML, CSS, JavaScript, Node.js, React]
+- Dashboard: [HTML, CSS, Node.js, React, MYSQL]
 - Initial dashboard code was generated through wireframe only for now.
 
-**Tools:** GitHub, Canva/AutoCAD (diagrams), Microsoft Word, Docs (manuscript)
+**Tools:** GitHub, Canva/AutoCAD (diagrams), Microsoft Word, Docs (manuscript), VSCode
 
 ---
 
@@ -86,22 +86,22 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 6. Upload.
 
 **Dashboard**
-1. Go to `GUI/source_code_files/`.
-2. [INSTALL STEP, e.g. `npm install`]
-3. [START STEP, e.g. `npm start`]
+1. Go to `GUI/LUMINARA_GUI/`.
+2. [INSTALL STEP, e.g. `npm install`] (TBA)
+3. [START STEP, e.g. `npm start`] (TBA)
 
 ---
 
 # 7. How to Run or Use the Project
 
 Current implementation (bench prototype):
-1. Power the panel controller and the lamp node(s).
-2. Start the dashboard (Section 6).
-3. The panel controller polls each lamp node over LoRa; each node replies with its light reading.
-4. The dashboard shows each lamp's state and logs it.
-5. Use the Switching Control page to send ON/OFF to the relay (contactor stand-in).
+1. Upload code on lamp node(s).
+2. Power both ESP32s with LoRa and BH1750 attached.
+3. The gateway ESP node connects to each other over LoRa; each node replies with its light reading.
+4. The dashboard shows each lamp's state and logs it. (Serial Monitor for now)
+5. Use the Switching Control page to send ON/OFF to the relay (contactor stand-in). (TBA)
 
-[ADJUST THESE STEPS TO WHAT ACTUALLY WORKS AT SUBMISSION TIME]
+[Prone to early changes due to early age of project prototype]
 
 ---
 
@@ -112,7 +112,7 @@ Current implementation (bench prototype):
 | Kian Rom R. Coronel | [Paper, Materials, Financing] | [Materials Purchasing, Manuscript Submission (Routing)] |
 | Rophil Gonzaga | [3D Modeling, Software Code] | [GUI Wireframe Sample, 3D Modeling Sample, Code] |
 | Charles Ehrric Padilla | [Hardware Prototyping] | [Soldering, Testing] |
-| Vince Luther Sabido | [Paper, Software-Hardware Integration] | [Manuscript, Code, Client Interview] |
+| Vince Luther Sabido | [Paper, Software-Hardware Integration] | [Manuscript, Code, Client Interview, GitHub] |
 
 Thesis adviser: John Benneth C. Abuan
 Technical Critique: Moneth Bersamin-Matala
@@ -148,6 +148,5 @@ Technical Critique: Moneth Bersamin-Matala
 | Thesis manuscript (Chapters 1-3, latest available version) | `documentation/thesis/2nd-Reading-02.pdf` |
 | Diagrams (general schematic, process flow, functional block diagram, dashboard wireframes) | `documentation/diagrams/` |
 | References | `documentation/references/` |
-| Firmware | `firmware/` |
-| Dashboard (GUI) source | `GUI/source_code_files/` |
+| Dashboard (GUI) source | `GUI/LUMINARA_GUI/` |
 | Other supporting files | `supporting_files/` |
