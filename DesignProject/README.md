@@ -4,7 +4,7 @@
 
 BS Computer Engineering thesis, Cavite State University (CvSU) - Carmona Campus, Department of Industrial and Information Technology.
 
----
+------------------------------------------------------------------------------------
 
 # 2. Project Overview
 
@@ -14,7 +14,7 @@ LUMINARA reduces this manual, citizen-reliant reporting. Each lamp gets a small 
 
 The system is built from common, low-cost IoT parts. The trade-off is accuracy and data detail, which the thesis states as a limitation.
 
----
+------------------------------------------------------------------------------------
 
 # 3. Objectives
 
@@ -30,7 +30,7 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 2. Develop the firmware of the lamp nodes and the panel controller, and the software of the web dashboard.
 3. Test the accuracy and reliability of the lamp nodes, the panel controller, and the web dashboard.
 
----
+------------------------------------------------------------------------------------
 
 # 4. Features
 
@@ -48,7 +48,7 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 
 **GUI functionality:** the dashboard shows each lamp's state, logs events, and lets the Engineering Department send ON/OFF commands and edit the schedule. Barangay officials get read-only access.
 
----
+------------------------------------------------------------------------------------
 
 # 5. Technologies Used
 
@@ -68,7 +68,7 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 
 **Tools:** GitHub, Canva/AutoCAD (diagrams), Microsoft Word, Docs (manuscript), VSCode
 
----
+------------------------------------------------------------------------------------
 
 # 6. Installation and Setup
 
@@ -90,7 +90,7 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 2. [INSTALL STEP, e.g. `npm install`] (TBA)
 3. [START STEP, e.g. `npm start`] (TBA)
 
----
+------------------------------------------------------------------------------------
 
 # 7. How to Run or Use the Project
 
@@ -103,7 +103,7 @@ Current implementation (bench prototype):
 
 [Prone to early changes due to early age of project prototype]
 
----
+------------------------------------------------------------------------------------
 
 # 8. Project Members
 
@@ -117,7 +117,7 @@ Current implementation (bench prototype):
 Thesis adviser: John Benneth C. Abuan
 Technical Critique: Moneth Bersamin-Matala
 
----
+------------------------------------------------------------------------------------
 
 # 9. Current Status and Future Improvements
 
@@ -139,7 +139,7 @@ Technical Critique: Moneth Bersamin-Matala
 - Field deployment on the straight-road lamps, with a thesis demo of 3 lamp nodes
 - Wiring and enclosure work, with the permission of the Brgy and Engr. Dept.
 
----
+------------------------------------------------------------------------------------
 
 # 10. Thesis and Documentation
 
