@@ -58,12 +58,12 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 - BH1750 digital light sensor
 - PZEM-004T v3 (100 A) with split-core CT
 - Contactor (Chint NCH8-25/20) driven by a 5 V opto relay module
-- 18650 Li-ion cells (swap-in battery for lamp nodes) (Might be replaced with solar power post-proposal defense)
+- 18650 Li-ion cells (swap-in battery for lamp nodes) (Will be integrated with solar power post-proposal defense)
 
 **Firmware / Software**
 - Arduino (C++) via Arduino IDE
 - Arduino libraries: [libraries include LINES, e.g. LoRa, BH1750, WiFi, etc.]
-- Dashboard: [HTML, CSS, Node.js, React, MYSQL]
+- Dashboard: [HTML, CSS, Node.js, React, MYSQL, JavaScript, HTTP]
 - Initial dashboard code was generated through wireframe only for now.
 
 **Tools:** GitHub, Canva/AutoCAD (diagrams), Microsoft Word, Docs (manuscript), VSCode
