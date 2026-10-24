@@ -65,9 +65,9 @@ const deriveLamp = (lamp, deviceById) => {
     case 'ONLINE':
       return { key: 'ACTIVE', installed: true, location, comm: 'Online', op: 'Normal', last: dev.time };
     case 'FAULT': // matches the Streetlight Details screen: fault + signal offline
-      return { key: 'FAULT', installed: true, location, comm: 'Offline', op: 'Fault', last: dev.time };
+      return { key: 'FAULT', installed: true, location, comm: dev.comm || 'Offline', op: dev.reported ? `Fault (${dev.reported})` : 'Fault', last: dev.time };
     case 'WARNING':
-      return { key: 'WARNING', installed: true, location, comm: 'Online', op: 'Warning', last: dev.time };
+      return { key: 'WARNING', installed: true, location, comm: 'Online', op: dev.reported ? `Warning (${dev.reported})` : 'Warning', last: dev.time };
     default: // OFFLINE
       return { key: 'OFFLINE', installed: true, location, comm: 'Offline', op: 'Unknown (no telemetry)', last: dev.time };
   }
@@ -187,12 +187,13 @@ const markerHtml = (key, selected, sample) => {
 };
 
 const iconFor = (key, selected, sample) => {
-  const size = key === 'FAULT' ? 30 : 22;
+  // 40px hit area so markers are easy to tap on a phone; the drawn marker stays the same size
+  const html = `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center">${markerHtml(key, selected, sample)}</div>`;
   return L.divIcon({
-    html: markerHtml(key, selected, sample),
+    html,
     className: 'lmp-marker',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
   });
 };
 
@@ -287,11 +288,26 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
 
   const selected = records.find((r) => r.streetlightId === selectedId) || null;
 
+  const detailsRef = useRef(null);
+  const mapWrapRef = useRef(null);
+  const isNarrow = () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(max-width: 1279px)').matches;
+  const scrollTo = (ref) => {
+    const el = ref.current;
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  // on phones/tablets the details panel sits under the map, so bring it into view when a lamp is picked
+  useEffect(() => {
+    if (selectedId && isNarrow()) scrollTo(detailsRef);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
   /* ----- map setup (runs once) ----- */
   useEffect(() => {
+    // a narrow (phone) map starts one zoom level out so the whole barangay cluster fits
+    const w = containerRef.current.clientWidth;
     const map = L.map(containerRef.current, {
       center: [BARANGAY_CENTER.lat, BARANGAY_CENTER.lng],
-      zoom: BARANGAY_CENTER.zoom,
+      zoom: w && w < 700 ? BARANGAY_CENTER.zoom - 1 : BARANGAY_CENTER.zoom,
       zoomControl: true,
     });
     L.tileLayer(OSM_URL, { maxZoom: 19, attribution: OSM_ATTR }).addTo(map);
@@ -336,7 +352,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
         keyboard: true,
         riseOnHover: true,
       });
-      marker.bindTooltip(r.streetlightId, { direction: 'top', offset: [0, -12] });
+      marker.bindTooltip(r.streetlightId, { direction: 'top', offset: [0, -14] });
       marker.on('click', () => {
         setSelectedId(r.streetlightId);
         setFormError('');
@@ -355,7 +371,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
   };
   const resetView = () => {
     const map = mapRef.current;
-    if (map) map.setView([BARANGAY_CENTER.lat, BARANGAY_CENTER.lng], BARANGAY_CENTER.zoom);
+    if (map) map.setView([BARANGAY_CENTER.lat, BARANGAY_CENTER.lng], map.getSize().x < 700 ? BARANGAY_CENTER.zoom - 1 : BARANGAY_CENTER.zoom);
   };
   const showAll = () => {
     setSearch('');
@@ -407,6 +423,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
     if (!selected) return;
     setFormError('');
     setPlacingId(selected.streetlightId);
+    if (isNarrow()) scrollTo(mapWrapRef);
   };
 
   /* ----- CSV import / template / reset ----- */
@@ -440,6 +457,33 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
     URL.revokeObjectURL(url);
   };
 
+  const csvCell = (v) => {
+  const s = v == null ? '' : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+const exportCsv = () => {
+  const header = 'streetlightId,streetName,latitude,longitude,deviceId';
+  const lines = records.map((r) => {
+    const real = r.coordSource === 'entered' && hasCoords(r); // never export placeholder coordinates
+    return [
+      r.streetlightId,
+      r.location === 'Location not recorded' ? '' : r.location,
+      real ? r.latitude : '',
+      real ? r.longitude : '',
+      r.deviceId || '',
+    ].map(csvCell).join(',');
+  });
+  // \uFEFF makes Excel read the "•" in street names correctly; the importer strips it.
+  const blob = new Blob(['\uFEFF' + [header, ...lines].join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'streetlight-locations.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
   const resetData = () => {
     if (!window.confirm('Reset the map to the built-in sample data? Coordinates you entered or imported will be lost.')) return;
     setLamps(SAMPLE_LAMPS);
@@ -450,10 +494,10 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
   };
 
   /* ----- small UI pieces ----- */
-  const selectCls = 'h-10 px-3 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-sm text-[#14233c] focus:outline-none';
-  const outlineBtn = 'h-10 px-4 bg-white border border-[#e1e7ee] rounded-md text-sm font-semibold text-[#14233c] hover:bg-gray-50';
-  const primaryBtn = 'h-10 px-4 bg-[#27a85a] text-white rounded-md text-sm font-semibold hover:bg-[#1f9a52]';
-  const inputCls = 'w-full h-10 px-3 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#27a85a]';
+  const selectCls = 'h-11 sm:h-10 px-3 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-base sm:text-sm text-[#14233c] focus:outline-none';
+  const outlineBtn = 'h-11 sm:h-10 px-4 bg-white border border-[#e1e7ee] rounded-md text-sm font-semibold text-[#14233c] hover:bg-gray-50';
+  const primaryBtn = 'h-11 sm:h-10 px-4 bg-[#27a85a] text-white rounded-md text-sm font-semibold hover:bg-[#1f9a52]';
+  const inputCls = 'w-full h-11 sm:h-10 px-3 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#27a85a]';
 
   const summary = [
     { label: 'Mapped Streetlights', value: counts.total, color: 'text-[#14233c]' },
@@ -502,8 +546,8 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
 
       {/* summary — all numbers come from the mapped dataset */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
-        {summary.map((s) => (
-          <Card key={s.label} className="p-5">
+        {summary.map((s, i) => (
+          <Card key={s.label} className={`p-4 sm:p-5 ${i === summary.length - 1 ? 'col-span-2 md:col-span-1' : ''}`}>
             <div className="text-xs font-bold text-[#5b6b82] uppercase">{s.label}</div>
             <div className={`text-3xl font-bold mt-2 ${s.color}`}>{s.value}</div>
           </Card>
@@ -512,7 +556,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
 
       {/* controls */}
       <Card className="px-5 py-4 mb-5">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
           <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 text-[#8895a7] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -524,7 +568,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
               className={`${inputCls} pl-9`}
             />
           </div>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${selectCls} w-44`} aria-label="Filter by deployment status">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${selectCls} w-full sm:w-44`} aria-label="Filter by deployment status">
             <option value="ALL">All statuses</option>
             <option value="NO_DEVICE">No device</option>
             <option value="INSTALLED">Device installed</option>
@@ -533,13 +577,13 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
             <option value="FAULT">Fault</option>
             {hasWarning && <option value="WARNING">Warning</option>}
           </select>
-          <select value={streetFilter} onChange={(e) => setStreetFilter(e.target.value)} className={`${selectCls} w-44`} aria-label="Filter by street">
+          <select value={streetFilter} onChange={(e) => setStreetFilter(e.target.value)} className={`${selectCls} w-full sm:w-44`} aria-label="Filter by street">
             <option value="ALL">All streets</option>
             {streets.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
-          <div className="flex gap-3 sm:ml-auto">
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:ml-auto">
             <button onClick={showAll} className={primaryBtn}>Show all</button>
             <button onClick={resetView} className={outlineBtn}>Reset view</button>
           </div>
@@ -552,6 +596,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
           </label>
           <span className="text-xs text-[#6b7a90] hidden md:inline">Field-survey data:</span>
           <button onClick={() => fileRef.current && fileRef.current.click()} className={outlineBtn}>Import CSV</button>
+          <button onClick={exportCsv} className={outlineBtn}>Export CSV</button>
           <button onClick={downloadTemplate} className={outlineBtn}>CSV template</button>
           <button onClick={resetData} className="text-xs font-semibold text-[#6b7a90] hover:text-[#e04040] underline ml-auto">Reset map data</button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" aria-label="Import streetlight locations CSV" />
@@ -571,12 +616,12 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
         {/* map */}
         <Card big className="p-3">
-          <div className="relative isolate overflow-hidden rounded-[1.5rem] h-[520px] md:h-[620px]">
+          <div ref={mapWrapRef} className="relative isolate overflow-hidden rounded-2xl md:rounded-[1.5rem] h-[420px] sm:h-[520px] md:h-[620px] scroll-mt-20">
             <div ref={containerRef} className="absolute inset-0" role="region" aria-label="Map of streetlights in Barangay 6, Carmona, Cavite" />
 
             {placingId && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-[#13223b] text-white text-sm rounded-lg px-4 py-2 flex items-center gap-3 shadow-lg">
-                <span>Click the map to set the location of <strong>{placingId}</strong></span>
+              <div className="absolute top-3 left-3 right-3 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 z-[1000] bg-[#13223b] text-white text-sm rounded-lg px-4 py-2 flex items-center justify-between gap-3 shadow-lg">
+                <span>Tap the map to set the location of <strong>{placingId}</strong></span>
                 <button onClick={() => setPlacingId(null)} className="text-xs font-bold underline">Cancel</button>
               </div>
             )}
@@ -589,7 +634,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
               </div>
             )}
 
-            <div className="absolute left-3 bottom-8 z-[1000] bg-white/95 rounded-xl border border-[#e6ebf1] p-3 text-xs shadow">
+            <div className="hidden md:block absolute right-3 bottom-8 z-[1000] bg-white/95 rounded-xl border border-[#e6ebf1] p-3 text-xs shadow">
               <div className="font-bold text-[#14233c] mb-2">Legend</div>
               <ul className="space-y-1.5">
                 {legendKeys.map((k) => (
@@ -606,6 +651,22 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
               </ul>
             </div>
           </div>
+          <div className="md:hidden px-2 pt-3">
+            <div className="font-bold text-xs text-[#14233c] mb-2">Legend</div>
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              {legendKeys.map((k) => (
+                <li key={k} className={`flex items-center gap-2 ${k === 'FAULT' ? 'col-span-2' : ''}`}>
+                  <LegendMark k={k} />
+                  <span>{legendText[k]}</span>
+                  <span className="text-[#6b7a90] ml-auto pl-2">{countKey(k)}</span>
+                </li>
+              ))}
+              <li className="col-span-2 flex items-center gap-2 pt-2 border-t border-[#e6ebf1]">
+                <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#cfd6df]" style={{ outline: '2px dashed #6b7a90', outlineOffset: '2px' }}></span>
+                <span>Sample location (not verified)</span>
+              </li>
+            </ul>
+          </div>
           <p className="px-2 pt-3 text-xs text-[#6b7a90]">
             Showing {visible.length} of {mapped.length} mapped streetlights
           </p>
@@ -613,12 +674,13 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
 
         {/* side panels */}
         <div className="space-y-6">
-          <Card big className="p-6">
-            <h3 className="font-bold text-lg mb-4">Streetlight Details</h3>
+          <Card big className="p-4 sm:p-6">
+            <h3 ref={detailsRef} className="font-bold text-lg mb-4 scroll-mt-20">Streetlight Details</h3>
             {!selected ? (
               <p className="text-sm text-[#6b7a90]">Click a marker on the map, or a lamp in the list below, to inspect it.</p>
             ) : (
               <div className="space-y-3">
+                <button onClick={() => scrollTo(mapWrapRef)} className="xl:hidden text-xs font-bold text-[#27a85a] hover:underline">↑ Back to map</button>
                 <Row label="Streetlight ID">{selected.streetlightId}</Row>
                 <Row label="Location">{selected.location}</Row>
                 <Row label="Coordinates">
@@ -671,7 +733,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
             )}
           </Card>
 
-          <Card big className="p-6">
+          <Card big className="p-4 sm:p-6">
             <h3 className="font-bold text-lg mb-1">Needs location ({unplaced.length})</h3>
             <p className="text-xs text-[#6b7a90] mb-3">Registered streetlights without usable coordinates. They are not shown on the map.</p>
             {unplaced.length === 0 ? (
