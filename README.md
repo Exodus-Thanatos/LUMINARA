@@ -43,7 +43,7 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 | Remote ON/OFF of the feed through a contactor (relay module as demo stand-in) | In progress |
 | Schedule-based switching on the panel controller (NTP time), with browser override | Planned |
 | Feed current/voltage monitoring (PZEM-004T with split-core CT) | Planned |
-| Fault reporting: one lamp out, feed/mains loss, low node battery, node offline | Planned |
+| Fault reporting: one lamp out, feed/mains loss, low node battery, node offline | In progress |
 | Dashboard (GUI): Overview, Lamp Status, Fault History, Switching Control, role-based login | In progress |
 | Dashboard record-keeping of lamp states, faults, and switching commands | In progress |
 
