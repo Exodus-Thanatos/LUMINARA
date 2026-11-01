@@ -1,0 +1,283 @@
+/* ==========================================================================
+   LUMINARA — NIGHTTIME CITY OPENING
+   Every class and keyframe starts with "ci-" so nothing clashes with the app.
+
+   QUICK TUNING (all on .ci-root below):
+     --ci-s              overall speed.   1 = normal, 1.5 = 50% slower, 0.7 = faster
+     --ci-walk-time      how long the person takes to cross the street
+     --ci-flicker-low    how deep the streetlight flicker dips (0.35 = visible,
+                         0.8 = barely noticeable, 1 = still a short fade-in)
+     --ci-lamp, --ci-warm, --ci-win-cool, --ci-sky-*  colours
+
+   Design rule: the normal (un-animated) style of every element is the FINISHED
+   scene. Animations only describe how it gets there ("backwards" fill), so
+   switching animations off (reduced motion) shows the completed city.
+   ========================================================================== */
+
+.ci-root {
+  --ci-s: 1;
+  --ci-walk-time: 8s;
+  --ci-flicker-low: 0.35;
+
+  --ci-sky-top: #050c2e;
+  --ci-sky-mid: #14246b;
+  --ci-sky-low: #5b4a8c;
+  --ci-far: #16336f;
+  --ci-near: #1c4a8e;
+  --ci-tree: #122b66;
+  --ci-wall-a: #0c4a70;
+  --ci-wall-b: #0a2d5c;
+  --ci-roof: #082243;
+  --ci-pole: #080f2a;
+  --ci-road: #07102f;
+  --ci-sidewalk: #112a63;
+  --ci-cyan: #35d0e6;
+  --ci-win-cool: #7fe7f3;
+  --ci-warm: #ffe3a0;
+  --ci-lamp: #ffd86b;
+
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #050b22; /* the dark navy the scene fades in from */
+  transition: opacity 0.6s ease;
+}
+.ci-root.ci-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ci-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none; /* decorative only */
+}
+
+/* ---------- layer reveal: Phase 1 (0 - 1.5 s) ---------- */
+.ci-sky { animation: ci-fadeIn calc(1.5s * var(--ci-s)) ease-out backwards; }
+.ci-skyline { animation: ci-cityReveal calc(1.4s * var(--ci-s)) ease-out calc(0.3s * var(--ci-s)) backwards; }
+.ci-near { animation: ci-cityReveal calc(1.4s * var(--ci-s)) ease-out calc(0.5s * var(--ci-s)) backwards; }
+.ci-front { animation: ci-cityReveal calc(1.4s * var(--ci-s)) ease-out calc(0.6s * var(--ci-s)) backwards; }
+.ci-ground { animation: ci-cityReveal calc(1.4s * var(--ci-s)) ease-out calc(0.7s * var(--ci-s)) backwards; }
+.ci-stars { animation: ci-fadeIn calc(1.4s * var(--ci-s)) ease-out calc(0.6s * var(--ci-s)) backwards; }
+.ci-moon { animation: ci-fadeIn calc(1.2s * var(--ci-s)) ease-out calc(0.9s * var(--ci-s)) backwards; }
+
+.ci-star {
+  fill: #dfe9ff;
+  animation: ci-starTwinkle calc(var(--t) * 1s) ease-in-out infinite alternate;
+  animation-delay: calc(var(--d) * -1s);
+}
+
+/* ---------- windows turn on, one by one: Phase 2 (1 - 3 s) ---------- */
+.ci-win {
+  fill: var(--ci-win-cool);
+  opacity: 0.9;
+  animation: ci-windowLightsOn calc(1.1s * var(--ci-s)) ease-out calc(var(--d) * 1s * var(--ci-s)) backwards;
+}
+.ci-win-warm { fill: var(--ci-warm); }
+.ci-win-big { fill: #5fb4d6; opacity: 0.42; }
+.ci-win-quick { animation-duration: calc(0.3s * var(--ci-s)); }
+
+/* ---------- streetlights: flicker briefly, then glow steadily ---------- */
+.ci-cone,
+.ci-bulb {
+  animation: ci-streetlightFlicker calc(1.6s * var(--ci-s)) linear calc((1.4s + var(--i) * 0.25s) * var(--ci-s)) backwards;
+}
+.ci-bulb { fill: #fff3c4; }
+.ci-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ci-streetlightGlow calc(1.6s * var(--ci-s)) ease-out calc((2.8s + var(--i) * 0.25s) * var(--ci-s)) backwards;
+}
+.ci-pool {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ci-groundLightReveal calc(1.8s * var(--ci-s)) ease-out calc((3s + var(--i) * 0.25s) * var(--ci-s)) backwards;
+}
+
+/* ---------- the person: Phase 3 (2 s onward) ---------- */
+.ci-person-travel {
+  transform: translate(1040px, 530px); /* finished position: off the right edge */
+  animation: ci-personWalk calc(var(--ci-walk-time) * var(--ci-s)) linear calc(2s * var(--ci-s)) both;
+}
+.ci-person {
+  fill: #0a1431;
+  /* brightens a little while passing under each streetlight (timed to the walk) */
+  animation: ci-personTone calc(var(--ci-walk-time) * var(--ci-s)) linear calc(2s * var(--ci-s)) both;
+}
+.ci-person-shadow { fill: #000; opacity: 0.35; }
+.ci-person-bob {
+  animation: ci-walkBob 0.19s ease-in-out infinite alternate;
+  animation-delay: calc(2s * var(--ci-s));
+}
+.ci-limb {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  animation-duration: 0.38s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-delay: calc(2s * var(--ci-s));
+}
+.ci-leg { animation-name: ci-walkCycle; }
+.ci-arm { animation-name: ci-armSwing; }
+.ci-leg-front,
+.ci-arm-back { animation-direction: alternate; }
+.ci-leg-back,
+.ci-arm-front { animation-direction: alternate-reverse; }
+.ci-leg-back,
+.ci-arm-back { fill-opacity: 0.8; }
+
+/* once the person has left, stop the looping animations */
+.ci-settled .ci-star,
+.ci-settled .ci-limb,
+.ci-settled .ci-person-bob { animation-play-state: paused; }
+
+/* ---------- logo, title and button: Phase 4 (about 4.4 s) ---------- */
+.ci-content-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24vh 20px 0;
+  pointer-events: none;
+}
+@media (max-aspect-ratio: 1/1) {
+  .ci-content-wrap { padding-top: 30vh; }
+}
+.ci-content {
+  position: relative;
+  pointer-events: auto;
+  text-align: center;
+  color: #fff;
+  animation: ci-contentReveal calc(1.1s * var(--ci-s)) ease-out calc(4.4s * var(--ci-s)) backwards;
+}
+.ci-content::before {
+  content: '';
+  position: absolute;
+  inset: -50px -90px;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(5, 11, 34, 0.6), rgba(5, 11, 34, 0));
+}
+.ci-logo {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 16px;
+  border-radius: 9999px;
+  background: #27a85a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 24px;
+  box-shadow: 0 0 28px rgba(39, 168, 90, 0.45);
+}
+.ci-title {
+  margin: 0;
+  font-size: clamp(2.2rem, 7vw, 3.6rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
+}
+.ci-sub {
+  margin: 6px 0 0;
+  font-size: clamp(0.8rem, 2.2vw, 1rem);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #c3d2ea;
+}
+.ci-place {
+  margin: 6px 0 22px;
+  font-size: 0.85rem;
+  color: #9fb2d0;
+}
+.ci-cta {
+  min-height: 46px;
+  padding: 0 44px;
+  border: 0;
+  border-radius: 8px;
+  background: #27a85a;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 22px rgba(39, 168, 90, 0.35);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.ci-cta:hover:not(:disabled) { background: #1f9a52; transform: translateY(-1px); }
+.ci-cta:disabled { cursor: default; }
+.ci-cta:focus-visible,
+.ci-skip:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+.ci-skip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 9999px;
+  background: rgba(5, 11, 34, 0.45);
+  color: #e6edf8;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ci-skip:hover { background: rgba(5, 11, 34, 0.7); }
+
+/* ---------- keyframes (they only list the starting look) ---------- */
+@keyframes ci-fadeIn { from { opacity: 0; } }
+@keyframes ci-cityReveal { from { opacity: 0; transform: translateY(14px); } }
+@keyframes ci-starTwinkle { from { opacity: 0.35; } to { opacity: 1; } }
+@keyframes ci-windowLightsOn { from { opacity: 0; } }
+@keyframes ci-streetlightFlicker {
+  0% { opacity: 0; }
+  14% { opacity: 0.55; }
+  30% { opacity: var(--ci-flicker-low); }
+  48% { opacity: 0.85; }
+  62% { opacity: 0.6; }
+  82%, 100% { opacity: 1; }
+}
+@keyframes ci-streetlightGlow { from { opacity: 0; transform: scale(0.5); } }
+@keyframes ci-groundLightReveal { from { opacity: 0; transform: scaleX(0.4); } }
+@keyframes ci-personWalk {
+  from { transform: translate(-40px, 530px); }
+  to { transform: translate(1040px, 530px); }
+}
+/* person colour vs. position: pools of light are at about 25%, 52%, 68% and 80% of the walk */
+@keyframes ci-personTone {
+  0%, 14% { fill: #0a1431; }
+  24%, 28% { fill: #1f3f7a; }
+  38%, 45% { fill: #0a1431; }
+  50%, 55% { fill: #1f3f7a; }
+  60% { fill: #132b5e; }
+  67%, 69% { fill: #1f3f7a; }
+  74% { fill: #132b5e; }
+  79%, 82% { fill: #1f3f7a; }
+  90%, 100% { fill: #0a1431; }
+}
+@keyframes ci-walkBob { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
+@keyframes ci-walkCycle { from { transform: rotate(-28deg); } to { transform: rotate(28deg); } }
+@keyframes ci-armSwing { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
+@keyframes ci-contentReveal { from { opacity: 0; transform: translateY(18px); } }
+
+/* ---------- reduced motion: show the finished city, nothing moves ---------- */
+.ci-static *,
+.ci-static *::before { animation: none !important; transition: none !important; }
+.ci-static .ci-person-travel { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ci-root,
+  .ci-root *,
+  .ci-root *::before { animation: none !important; transition: none !important; }
+  .ci-person-travel { display: none; }
+}
