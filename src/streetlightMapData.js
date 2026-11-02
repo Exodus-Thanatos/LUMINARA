@@ -92,3 +92,13 @@ export const SAMPLE_LAMPS = ROWS.map(([streetlightId, deviceId, street, pos, str
     coordSource: placed ? 'sample' : 'none', // 'sample' | 'entered' | 'none'
   };
 });
+
+// "Show sample locations" preference. Shared so the Settings screen (Compact Map View) and the map use the same setting.
+export const STORAGE_SAMPLE = 'luminara.map.showSample.v1';
+export const readShowSample = () => {
+  try {
+    return localStorage.getItem(STORAGE_SAMPLE) !== 'false';
+  } catch {
+    return true;
+  }
+};

@@ -1133,7 +1133,7 @@
 // };
 
 // export default App;
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -1144,6 +1144,7 @@ import {
 } from 'recharts';
 import {
   LayoutGrid,
+  LoaderCircle,
   Crosshair,
   Clock,
   Sun,
@@ -1157,7 +1158,17 @@ import {
   Menu,
   X,
 } from 'lucide-react';
-import StreetlightMap from './StreetlightMap.jsx';
+import SettingsScreen from './Settings.jsx';
+import { CardTitle } from './uiKit.jsx';
+import { STORAGE_SAMPLE, readShowSample } from './streetlightMapData.js';
+
+// The map (Leaflet) is loaded on demand and then kept mounted, so it is not rebuilt on every visit.
+// (Plain dynamic import instead of React.lazy/Suspense: Suspense holds its fallback on screen for ~300 ms even when ready.)
+let MapScreenComp = null;
+const loadMap = () =>
+  MapScreenComp
+    ? Promise.resolve(MapScreenComp)
+    : import('./StreetlightMap.jsx').then((m) => (MapScreenComp = memo(m.default)));
 import { useLiveLamps, mergeLive, byLampId } from './useLiveLamps.js';
 import CityIntro from './CityIntro.jsx';
 import { shouldPlayIntro } from './introSession.js';
@@ -1348,6 +1359,9 @@ const Sidebar = ({ currentScreen, setScreen, open = false, onClose = () => {} })
           return (
             <button
               key={id}
+              aria-current={active ? 'page' : undefined}
+              onMouseEnter={id === 'map' ? loadMap : undefined}
+              onFocus={id === 'map' ? loadMap : undefined}
               onClick={() => {
                 setScreen(id);
                 onClose();
@@ -1382,7 +1396,7 @@ const Sidebar = ({ currentScreen, setScreen, open = false, onClose = () => {} })
 /* Title bar + the sub-row (subtitle on the left, actions on the right) */
 const Header = ({ title, subtitle, actions }) => (
   <>
-    <div className="flex justify-between items-center border-b-[3px] border-[#e1e7ee] pb-4 md:pb-6">
+    <div className="flex justify-between items-center border-b border-[#e1e7ee] pb-4 md:pb-6">
       <h1 className="text-2xl md:text-3xl font-bold text-[#14233c]">{title}</h1>
       <div className="hidden md:flex items-center gap-4">
         <span className="text-sm font-semibold text-[#5b6b82]">Barangay 6</span>
@@ -1402,11 +1416,11 @@ const Header = ({ title, subtitle, actions }) => (
 );
 
 const Page = ({ children }) => (
-  <main className="lg:ml-64 pt-[4.5rem] px-4 pb-8 md:px-6 lg:p-10 bg-[#f3f6f9] min-h-screen text-[#14233c] overflow-x-hidden">{children}</main>
+  <main className="lm-page lg:ml-64 pt-[4.5rem] px-4 pb-8 md:px-6 lg:p-10 bg-[#f3f6f9] min-h-screen text-[#14233c] overflow-x-hidden">{children}</main>
 );
 
 const Card = ({ big = false, className = '', children }) => (
-  <div className={`bg-white border border-[#e6ebf1] ${big ? 'rounded-3xl md:rounded-[2rem]' : 'rounded-2xl'} ${className}`}>
+  <div className={`bg-white border border-[#e6ebf1] ${big ? 'rounded-2xl' : 'rounded-xl'} ${className}`}>
     {children}
   </div>
 );
@@ -1416,10 +1430,10 @@ const Pill = ({ className = '', children }) => (
 );
 
 const OutlineButton = ({ className = '', ...p }) => (
-  <button {...p} className={`h-[42px] px-6 bg-white border border-[#e1e7ee] rounded-md text-sm font-semibold text-[#14233c] hover:bg-gray-50 ${className}`} />
+  <button {...p} className={`h-[42px] px-6 bg-white border border-[#e1e7ee] rounded-lg text-sm font-semibold text-[#14233c] hover:bg-gray-50 transition-colors ${className}`} />
 );
 const PrimaryButton = ({ className = '', ...p }) => (
-  <button {...p} className={`h-[42px] px-6 bg-[#27a85a] text-white rounded-md text-sm font-semibold hover:bg-[#1f9a52] ${className}`} />
+  <button {...p} className={`h-[42px] px-6 bg-[#27a85a] text-white rounded-lg text-sm font-semibold hover:bg-[#1f9a52] transition-colors ${className}`} />
 );
 
 /* ==========================================================================
@@ -1533,10 +1547,7 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
             <Pill className="px-5 py-2.5 bg-[#e3f4ea] text-[#27a85a]">Live Status</Pill>
           </div>
           <Card big className="p-4 sm:p-7">
-            <div className="flex justify-between items-center mb-5 sm:mb-7">
-              <h3 className="font-bold">LAMP NETWORK STATUS</h3>
-              <span className="text-xs font-bold text-[#1f9a52]">● {live ? nOnline : demoCount('ON')} normal</span>
-            </div>
+            <CardTitle small right={<span className="text-xs font-bold text-[#1f9a52]">● {live ? nOnline : demoCount('ON')} normal</span>}>LAMP NETWORK STATUS</CardTitle>
             {live && tiles.length === 0 && (
               <p className="py-10 text-center text-sm text-[#6b7a90]">No lamp nodes detected yet. A lamp appears here when its node first reports.</p>
             )}
@@ -1558,7 +1569,7 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
 
         <div className="space-y-6">
           <Card big className="p-6">
-            <h3 className="font-bold text-lg mb-5">Recent Alerts</h3>
+            <CardTitle>Recent Alerts</CardTitle>
             {live && alerts.length === 0 && <p className="text-sm text-[#6b7a90]">No active alerts.</p>}
             {alerts.map((a, i) => (
               <div
@@ -1579,7 +1590,7 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
           </Card>
 
           <Card big className="p-6">
-            <h3 className="font-bold text-lg mb-5">System Activity</h3>
+            <CardTitle>System Activity</CardTitle>
             <div className="flex justify-between items-center mb-4 text-sm">
               <span className="text-[#6b7a90]">Last sync</span>
               <span className="font-bold">{live ? lastSync : '10:42:08 AM'}</span>
@@ -1622,7 +1633,7 @@ const Monitoring = ({ setScreen, devices, mode }) => {
     setter(e.target.value);
     setPage(1);
   };
-  const selectCls = 'h-11 md:h-10 px-4 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-base md:text-sm text-[#14233c] focus:outline-none';
+  const selectCls = 'h-11 md:h-10 px-4 bg-[#f8fafc] border border-[#e1e7ee] rounded-lg text-base md:text-sm text-[#14233c] focus:outline-none focus:ring-2 focus:ring-[#27a85a]/30';
 
   return (
     <Page>
@@ -1646,7 +1657,7 @@ const Monitoring = ({ setScreen, devices, mode }) => {
               value={query}
               onChange={onChange(setQuery)}
               placeholder="Search ID, location..."
-              className="w-full h-11 md:h-10 pl-10 pr-3 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-base md:text-sm focus:outline-none focus:ring-1 focus:ring-[#27a85a]"
+              className="w-full h-11 md:h-10 pl-10 pr-3 bg-[#f8fafc] border border-[#e1e7ee] rounded-lg text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-[#27a85a]/30"
             />
           </div>
           <select value={statusFilter} onChange={onChange(setStatusFilter)} className={`${selectCls} w-full sm:w-44`}>
@@ -1863,6 +1874,7 @@ const Details = ({ setScreen }) => {
         <div className="flex items-center gap-4 sm:gap-6">
           <h2 className="text-4xl font-bold">L-008</h2>
           <Pill className="px-6 py-2.5 bg-[#fde8e8] text-[#e04040]">Fault</Pill>
+          <Pill className="px-3 h-7 bg-[#eceff3] text-[#5b6b82] text-[11px]">SAMPLE DATA</Pill>
         </div>
         <div className="flex gap-3 sm:gap-4">
           <OutlineButton>Edit Device</OutlineButton>
@@ -1883,7 +1895,7 @@ const Details = ({ setScreen }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.66fr_1fr] gap-6 lg:gap-7 items-start">
         <Card big className="p-4 md:p-6">
-          <h3 className="font-bold text-lg mb-3">Sensor Readings</h3>
+          <CardTitle>Sensor Readings</CardTitle>
           <p className="text-sm font-bold text-[#6b7a90] mb-3 ml-3">Voltage (V)</p>
           <div className="h-56 md:h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -1909,7 +1921,7 @@ const Details = ({ setScreen }) => {
 
         <div className="space-y-6">
           <Card big className="p-6">
-            <h3 className="font-bold text-lg mb-5">Device Information</h3>
+            <CardTitle>Device Information</CardTitle>
             <div className="space-y-5">
               {info.map(([k, v]) => (
                 <div key={k} className="flex justify-between items-center text-sm">
@@ -1921,7 +1933,7 @@ const Details = ({ setScreen }) => {
           </Card>
 
           <Card big className="p-6">
-            <h3 className="font-bold text-lg mb-4">Active Alert</h3>
+            <CardTitle>Active Alert</CardTitle>
             <div className="flex items-start gap-4 mb-5">
               <div className="w-10 h-10 shrink-0 rounded-full bg-[#fde8e8] text-[#e04848] flex items-center justify-center font-bold">!</div>
               <div>
@@ -1991,10 +2003,7 @@ const Maintenance = () => {
       </div>
 
       <Card big className="p-4 md:p-6 pb-6 md:pb-10">
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <h2 className="text-lg font-bold">Recent Maintenance Tickets</h2>
-          <Pill className="px-3 h-7 bg-[#eceff3] text-[#5b6b82] text-[11px]">SAMPLE DATA</Pill>
-        </div>
+        <CardTitle right={<Pill className="px-3 h-7 bg-[#eceff3] text-[#5b6b82] text-[11px]">SAMPLE DATA</Pill>}>Recent Maintenance Tickets</CardTitle>
         <div className="hidden md:block">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -2068,10 +2077,14 @@ const postControl = (on) =>
     return r.json();
   });
 
-const manualPill = (c) => {
+// Only the relay's own report ("applied") ever shows Lights ON / OFF. Everything before that is a request, not a result.
+const manualPill = (c, checked = true, sending = false) => {
+  if (sending) return ['Sending…', 'bg-[#e8effc] text-[#3b82f6]'];
+  if (!checked) return ['Checking…', 'bg-[#eceff3] text-[#8895a7]'];
   if (!c) return ['Server unreachable', 'bg-[#fdecec] text-[#e04848]'];
+  if (c.pending && !c.controllerOnline) return ['Queued · controller offline', 'bg-[#fff3d6] text-[#c98a0a]'];
   if (!c.controllerOnline) return ['Controller offline', 'bg-[#fff3d6] text-[#c98a0a]'];
-  if (c.pending) return ['Switching…', 'bg-[#e8effc] text-[#3b82f6]'];
+  if (c.pending) return ['Waiting for relay…', 'bg-[#e8effc] text-[#3b82f6]'];
   if (c.applied === true) return ['Lights ON', 'bg-[#e3f4ea] text-[#27a85a]'];
   if (c.applied === false) return ['Lights OFF', 'bg-[#eceff3] text-[#8895a7]'];
   return ['No command yet', 'bg-[#eceff3] text-[#8895a7]'];
@@ -2090,14 +2103,25 @@ const Controls = () => {
     setActivity((prev) => [{ color, time: nowLabel(), text }, ...prev].slice(0, 4));
 
   const [ctl, setCtl] = useState(null); // null = server unreachable
+  const [checked, setChecked] = useState(false); // has the first /api/control answer arrived yet?
   const [busy, setBusy] = useState(false);
+  const [requested, setRequested] = useState(null); // { on, at } of the last command sent from this screen
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let alive = true;
     const poll = () =>
       getControl()
-        .then((c) => alive && setCtl(c))
-        .catch(() => alive && setCtl(null));
+        .then((c) => {
+          if (!alive) return;
+          setChecked(true);
+          setCtl((prev) => (JSON.stringify(prev) === JSON.stringify(c) ? prev : c)); // no re-render when nothing changed
+        })
+        .catch(() => {
+          if (!alive) return;
+          setChecked(true);
+          setCtl(null);
+        });
     poll();
     const id = setInterval(poll, 2000);
     return () => {
@@ -2106,10 +2130,20 @@ const Controls = () => {
     };
   }, []);
 
+  const pending = !!ctl?.pending;
+  useEffect(() => {
+    if (!pending) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [pending]);
+
   const setLamp = async (on) => {
     setBusy(true);
     try {
-      setCtl(await postControl(on));
+      const next = await postControl(on);
+      setRequested({ on, at: Date.now() });
+      setNow(Date.now());
+      setCtl(next);
       log('bg-[#3b82f6]', `Manual: all lights ${on ? 'ON' : 'OFF'} requested`);
     } catch {
       setCtl(null);
@@ -2118,7 +2152,10 @@ const Controls = () => {
       setBusy(false);
     }
   };
-  const [pillText, pillClass] = manualPill(ctl);
+  const [pillText, pillClass] = manualPill(ctl, checked, busy);
+  const waitedS = requested ? Math.max(0, Math.round((now - requested.at) / 1000)) : null;
+  const wantOn = pending ? ctl.want : null; // the state that has been requested but not yet confirmed by the relay
+  const pendingRing = 'ring-2 ring-[#3b82f6] ring-offset-2';
 
   const resetFaults = () => {
     setFaults(0);
@@ -2146,7 +2183,7 @@ const Controls = () => {
       <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-5 lg:gap-x-8 lg:gap-y-7">
         {/* Quick Actions */}
         <Card big className="p-4 sm:p-6">
-          <h3 className="font-bold text-lg mb-5">Quick Actions</h3>
+          <CardTitle>Quick Actions</CardTitle>
           <div className="space-y-3">
             {quick.map((a) => (
               <button
@@ -2174,27 +2211,37 @@ const Controls = () => {
             <button
               disabled={busy}
               onClick={() => setLamp(true)}
-              className={`h-12 rounded-lg text-sm font-bold disabled:opacity-50 ${
+              className={`h-12 rounded-lg text-sm font-bold disabled:opacity-60 inline-flex items-center justify-center gap-2 transition-colors ${
                 ctl?.applied === true ? 'bg-[#27a85a] text-white' : 'bg-[#e3f4ea] text-[#27a85a] hover:bg-[#d3eddc]'
-              }`}
+              } ${wantOn === true ? pendingRing : ''}`}
             >
+              {busy && <LoaderCircle size={16} className="animate-spin" />}
               Turn ON
             </button>
             <button
               disabled={busy}
               onClick={() => setLamp(false)}
-              className={`h-12 rounded-lg text-sm font-bold disabled:opacity-50 ${
+              className={`h-12 rounded-lg text-sm font-bold disabled:opacity-60 inline-flex items-center justify-center gap-2 transition-colors ${
                 ctl?.applied === false ? 'bg-[#14233c] text-white' : 'bg-[#eceff3] text-[#5b6b82] hover:bg-[#e1e6ec]'
-              }`}
+              } ${wantOn === false ? pendingRing : ''}`}
             >
+              {busy && <LoaderCircle size={16} className="animate-spin" />}
               Turn OFF
             </button>
           </div>
+          {pending && (
+            <p className="mt-4 text-xs text-[#6b7a90]" aria-live="polite">
+              {requested
+                ? `Requested ${ctl.want ? 'ON' : 'OFF'}${waitedS !== null ? ` · sent ${waitedS} s ago` : ''}. The status above changes only after the relay confirms.`
+                : `A ${ctl.want ? 'ON' : 'OFF'} request is waiting for the relay to confirm.`}
+              {waitedS !== null && waitedS >= 15 && ' No confirmation yet: check that the relay controller is powered and online. The request stays queued on the server.'}
+            </p>
+          )}
         </Card>
 
         {/* Automatic Schedule */}
         <Card big className="p-4 sm:p-6">
-          <h3 className="font-bold text-lg mb-5">Automatic Schedule</h3>
+          <CardTitle right={<Pill className="px-3 h-7 bg-[#eceff3] text-[#5b6b82] text-[11px]">PREVIEW · NOT CONNECTED</Pill>}>Automatic Schedule</CardTitle>
           <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start px-2">
             <div className="flex gap-6 sm:gap-24">
               <div>
@@ -2236,7 +2283,7 @@ const Controls = () => {
 
         {/* Control Activity */}
         <Card big className="p-4 sm:p-6">
-          <h3 className="font-bold text-lg mb-5">Control Activity</h3>
+          <CardTitle>Control Activity</CardTitle>
           <div className="space-y-5">
             {activity.map((a, i) => (
               <div key={`${a.time}-${i}`} className="flex items-start gap-4">
@@ -2255,26 +2302,51 @@ const Controls = () => {
 };
 
 /* ==========================================================================
-   SETTINGS — nav target only (no approved design for it)
-   ========================================================================== */
-
-const SettingsPlaceholder = () => (
-  <Page>
-    <Header title="Settings" />
-    <Card big className="p-10 text-center text-sm text-[#6b7a90]">Settings are not part of this release.</Card>
-  </Page>
-);
-
-/* ==========================================================================
    APP CONTAINER
    ========================================================================== */
+
+// Screens that only depend on `devices`/`mode` skip re-rendering when the receiver sends an identical snapshot.
+const DashboardScreen = memo(Dashboard);
+const MonitoringScreen = memo(Monitoring);
 
 const App = () => {
   const [currentScreen, setCurrentScreen] = useState('login');
   const [menuOpen, setMenuOpen] = useState(false); // slide-out menu on phones
   const [showIntro, setShowIntro] = useState(shouldPlayIntro); // opening city animation (once per session)
   const liveState = useLiveLamps();
-  const { devices, mode, hasTest, lastSync } = useMemo(() => mergeLive(DEVICES, liveState), [liveState]);
+  const merged = useMemo(() => mergeLive(DEVICES, liveState), [liveState]);
+  const { mode, hasTest, lastSync } = merged;
+  // The receiver re-sends its snapshot every 5 s. Keep the same `devices` array while nothing in it has changed,
+  // so the screens (and the map markers) are not re-rendered for nothing. The data itself is untouched.
+  const devicesKey = JSON.stringify(merged.devices);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const devices = useMemo(() => merged.devices, [devicesKey]);
+
+  const [MapComp, setMapComp] = useState(null); // set on the first visit to the map, then the map is kept alive
+  const [showSample, setShowSampleState] = useState(readShowSample);
+  const setShowSample = useCallback((v) => {
+    setShowSampleState(v);
+    try {
+      localStorage.setItem(STORAGE_SAMPLE, String(v));
+    } catch {
+      /* private mode: the setting just won't persist */
+    }
+  }, []);
+  const goto = useCallback((s) => {
+    if (s === 'map') loadMap().then((C) => setMapComp(() => C));
+    setCurrentScreen(s);
+  }, []);
+  const openDetails = useCallback(() => setCurrentScreen('details'), []);
+  const detailsIds = useMemo(() => (mode === 'live' ? [] : ['L-008']), [mode]);
+  const toggleCompactMap = useCallback((on) => setShowSample(!on), [setShowSample]);
+
+  // warm the map chunk once the user is in, so the first visit is instant
+  const signedIn = currentScreen !== 'login';
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    const id = setTimeout(loadMap, 1200);
+    return () => clearTimeout(id);
+  }, [signedIn]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -2322,7 +2394,7 @@ const App = () => {
         <div className="w-8 h-8 rounded-full bg-[#e0f3e8] text-[#27a85a] font-bold text-sm flex items-center justify-center">A</div>
       </header>
       {menuOpen && <div className="lg:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
-      <Sidebar currentScreen={currentScreen} setScreen={setCurrentScreen} open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Sidebar currentScreen={currentScreen} setScreen={goto} open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div
         className={`fixed bottom-3 right-3 z-30 px-3 py-1.5 rounded-md text-[11px] font-bold shadow ${
           mode === 'live' ? (hasTest ? 'bg-[#fff3d6] text-[#c98a0a]' : 'bg-[#e3f4ea] text-[#1f9a52]') : 'bg-[#eceff3] text-[#5b6b82]'
@@ -2330,23 +2402,38 @@ const App = () => {
       >
         {mode === 'live' ? (hasTest ? 'LIVE + TEST DATA' : 'LIVE DATA') : 'DEMO DATA — receiver not connected'}
       </div>
-      {currentScreen === 'dashboard' && <Dashboard setScreen={setCurrentScreen} devices={devices} mode={mode} lastSync={lastSync} />}
-      {currentScreen === 'monitoring' && <Monitoring setScreen={setCurrentScreen} devices={devices} mode={mode} />}
-      {currentScreen === 'map' && (
-        <StreetlightMap
-          Page={Page}
-          Header={Header}
-          Card={Card}
-          Pill={Pill}
-          devices={devices}
-          detailsDeviceIds={mode === 'live' ? [] : ['L-008']}
-          onOpenDetails={() => setCurrentScreen('details')}
-        />
+      {currentScreen === 'dashboard' && <DashboardScreen setScreen={goto} devices={devices} mode={mode} lastSync={lastSync} />}
+      {currentScreen === 'monitoring' && <MonitoringScreen setScreen={goto} devices={devices} mode={mode} />}
+      {currentScreen === 'map' && !MapComp && (
+        <Page>
+          <Header title="Streetlight Map" subtitle="Loading the map…" />
+          <Card big className="p-10 text-center text-sm text-[#6b7a90] inline-flex items-center gap-3 justify-center w-full">
+            <LoaderCircle size={18} className="animate-spin" /> Loading map
+          </Card>
+        </Page>
       )}
-      {currentScreen === 'details' && <Details setScreen={setCurrentScreen} />}
+      {MapComp && (
+        <div hidden={currentScreen !== 'map'}>
+          <MapComp
+            Page={Page}
+            Header={Header}
+            Card={Card}
+            Pill={Pill}
+            devices={devices}
+            detailsDeviceIds={detailsIds}
+            onOpenDetails={openDetails}
+            active={currentScreen === 'map'}
+            showSample={showSample}
+            onShowSampleChange={setShowSample}
+          />
+        </div>
+      )}
+      {currentScreen === 'details' && <Details setScreen={goto} />}
       {currentScreen === 'maintenance' && <Maintenance />}
       {currentScreen === 'controls' && <Controls />}
-      {currentScreen === 'settings' && <SettingsPlaceholder />}
+      {currentScreen === 'settings' && (
+        <SettingsScreen Page={Page} Header={Header} Card={Card} compactMap={!showSample} onCompactMapChange={toggleCompactMap} />
+      )}
     </div>
   );
 };

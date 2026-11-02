@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css'; // only defines .leaflet-* classes; does not affect other pages
 import { Search } from 'lucide-react';
-import { BARANGAY_CENTER, SAMPLE_LAMPS } from './streetlightMapData.js';
+import { BARANGAY_CENTER, SAMPLE_LAMPS, STORAGE_SAMPLE, readShowSample } from './streetlightMapData.js';
 
 /* ==========================================================================
    STREETLIGHT MAP PAGE
@@ -14,7 +14,6 @@ import { BARANGAY_CENTER, SAMPLE_LAMPS } from './streetlightMapData.js';
 const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const STORAGE_LAMPS = 'luminara.map.lamps.v1';
-const STORAGE_SAMPLE = 'luminara.map.showSample.v1';
 const MAX_DISTANCE_KM = 3; // reject coordinates farther than this from Barangay 6
 
 // RED = no device. FAULT is a different SHAPE (diamond with "!") so it can never be mistaken for it.
@@ -79,13 +78,6 @@ const loadLamps = () => {
     return Array.isArray(parsed) ? parsed : SAMPLE_LAMPS;
   } catch {
     return SAMPLE_LAMPS;
-  }
-};
-const loadShowSample = () => {
-  try {
-    return localStorage.getItem(STORAGE_SAMPLE) !== 'false';
-  } catch {
-    return true;
   }
 };
 
@@ -211,11 +203,23 @@ const LegendMark = ({ k }) =>
    COMPONENT
    ========================================================================== */
 
-const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = [], onOpenDetails }) => {
+const Row = ({ label, children }) => (
+  <div className="flex justify-between items-start gap-4 text-sm">
+    <span className="text-[#6b7a90] shrink-0">{label}</span>
+    <span className="font-semibold text-right">{children}</span>
+  </div>
+);
+
+// `active`: false while another screen is showing (the map stays mounted, hidden, so it is not rebuilt on every visit).
+// `showSample` / `onShowSampleChange`: optional; when given, the parent owns the "show sample locations" setting.
+const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = [], onOpenDetails, active = true, showSample: showSampleProp, onShowSampleChange }) => {
   const deviceById = useMemo(() => Object.fromEntries(devices.map((d) => [d.id, d])), [devices]);
 
   const [lamps, setLamps] = useState(loadLamps);
-  const [showSample, setShowSample] = useState(loadShowSample);
+  const [showSampleLocal, setShowSampleLocal] = useState(readShowSample);
+  const controlled = typeof showSampleProp === 'boolean' && typeof onShowSampleChange === 'function';
+  const showSample = controlled ? showSampleProp : showSampleLocal;
+  const setShowSample = controlled ? onShowSampleChange : setShowSampleLocal;
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [streetFilter, setStreetFilter] = useState('ALL');
@@ -229,6 +233,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
+  const markersRef = useRef(new Map()); // streetlightId -> { marker, sig }: lets us update only what changed
   const clickRef = useRef(() => {});
   const fileRef = useRef(null);
 
@@ -312,6 +317,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
     });
     L.tileLayer(OSM_URL, { maxZoom: 19, attribution: OSM_ATTR }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
+    markersRef.current = new Map();
     map.on('click', (e) => clickRef.current(e.latlng));
     mapRef.current = map;
     const t = setTimeout(() => map.invalidateSize(), 0);
@@ -320,8 +326,16 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      markersRef.current = new Map();
     };
   }, []);
+
+  // the container has no size while hidden, so re-measure when the map is shown again
+  useEffect(() => {
+    if (!active) return undefined;
+    const t = setTimeout(() => mapRef.current && mapRef.current.invalidateSize(), 0);
+    return () => clearTimeout(t);
+  }, [active]);
 
   /* ----- click-on-map placement ----- */
   clickRef.current = (latlng) => {
@@ -344,20 +358,35 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;
-    layer.clearLayers();
+    const cache = markersRef.current;
+    const seen = new Set();
     visible.forEach((r) => {
+      const id = r.streetlightId;
+      const isSel = id === selectedId;
+      const sig = `${r.key}|${isSel}|${r.coordSource === 'sample'}|${r.latitude}|${r.longitude}`;
+      seen.add(id);
+      const cur = cache.get(id);
+      if (cur && cur.sig === sig) return; // unchanged: leave the existing marker alone
+      if (cur) layer.removeLayer(cur.marker);
       const marker = L.marker([Number(r.latitude), Number(r.longitude)], {
-        icon: iconFor(r.key, r.streetlightId === selectedId, r.coordSource === 'sample'),
-        title: `${r.streetlightId} — ${STATUS[r.key].label}`,
+        icon: iconFor(r.key, isSel, r.coordSource === 'sample'),
+        title: `${id} — ${STATUS[r.key].label}`,
         keyboard: true,
         riseOnHover: true,
       });
-      marker.bindTooltip(r.streetlightId, { direction: 'top', offset: [0, -14] });
+      marker.bindTooltip(id, { direction: 'top', offset: [0, -14] });
       marker.on('click', () => {
-        setSelectedId(r.streetlightId);
+        setSelectedId(id);
         setFormError('');
       });
       marker.addTo(layer);
+      cache.set(id, { marker, sig });
+    });
+    cache.forEach((v, id) => {
+      if (!seen.has(id)) {
+        layer.removeLayer(v.marker);
+        cache.delete(id);
+      }
     });
   }, [visible, selectedId]);
 
@@ -502,10 +531,10 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
   };
 
   /* ----- small UI pieces ----- */
-  const selectCls = 'h-11 sm:h-10 px-3 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-base sm:text-sm text-[#14233c] focus:outline-none';
-  const outlineBtn = 'h-11 sm:h-10 px-4 bg-white border border-[#e1e7ee] rounded-md text-sm font-semibold text-[#14233c] hover:bg-gray-50';
-  const primaryBtn = 'h-11 sm:h-10 px-4 bg-[#27a85a] text-white rounded-md text-sm font-semibold hover:bg-[#1f9a52]';
-  const inputCls = 'w-full h-11 sm:h-10 px-3 bg-[#f3f6f9] border border-[#e1e7ee] rounded-md text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#27a85a]';
+  const selectCls = 'h-11 sm:h-10 px-3 bg-[#f8fafc] border border-[#e1e7ee] rounded-lg text-base sm:text-sm text-[#14233c] focus:outline-none focus:ring-2 focus:ring-[#27a85a]/30';
+  const outlineBtn = 'h-11 sm:h-10 px-4 bg-white border border-[#e1e7ee] rounded-lg text-sm font-semibold text-[#14233c] hover:bg-gray-50 transition-colors';
+  const primaryBtn = 'h-11 sm:h-10 px-4 bg-[#27a85a] text-white rounded-lg text-sm font-semibold hover:bg-[#1f9a52] transition-colors';
+  const inputCls = 'w-full h-11 sm:h-10 px-3 bg-[#f8fafc] border border-[#e1e7ee] rounded-lg text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#27a85a]/30';
 
   const summary = [
     { label: 'Mapped Streetlights', value: counts.total, color: 'text-[#14233c]' },
@@ -522,13 +551,6 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
     >
       {STATUS[k].label}
     </span>
-  );
-
-  const Row = ({ label, children }) => (
-    <div className="flex justify-between items-start gap-4 text-sm">
-      <span className="text-[#6b7a90] shrink-0">{label}</span>
-      <span className="font-semibold text-right">{children}</span>
-    </div>
   );
 
   const legendKeys = ['NO_DEVICE', 'ACTIVE', 'OFFLINE', ...(hasWarning ? ['WARNING'] : []), 'FAULT'];
@@ -683,7 +705,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
         {/* side panels */}
         <div className="space-y-6">
           <Card big className="p-4 sm:p-6">
-            <h3 ref={detailsRef} className="font-bold text-lg mb-4 scroll-mt-20">Streetlight Details</h3>
+            <h3 ref={detailsRef} className="font-bold text-lg pb-3 mb-4 border-b border-[#e6ebf1] scroll-mt-20">Streetlight Details</h3>
             {!selected ? (
               <p className="text-sm text-[#6b7a90]">Click a marker on the map, or a lamp in the list below, to inspect it.</p>
             ) : (
@@ -742,7 +764,7 @@ const StreetlightMap = ({ Page, Header, Card, Pill, devices, detailsDeviceIds = 
           </Card>
 
           <Card big className="p-4 sm:p-6">
-            <h3 className="font-bold text-lg mb-1">Needs location ({unplaced.length})</h3>
+            <h3 className="font-bold text-lg pb-3 mb-3 border-b border-[#e6ebf1]">Needs location ({unplaced.length})</h3>
             <p className="text-xs text-[#6b7a90] mb-3">Registered streetlights without usable coordinates. They are not shown on the map.</p>
             {unplaced.length === 0 ? (
               <p className="text-sm text-[#6b7a90]">Every registered streetlight has a location.</p>

@@ -1,1 +1,9 @@
 @import "tailwindcss";
+/* ---- Phase 1 UI refresh: visual feedback only ---- */
+@keyframes lm-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.lm-page { animation: lm-fade 0.16s ease-out; }
+@media (prefers-reduced-motion: reduce) { .lm-page { animation: none; } }
+button:not(:disabled), [role='switch']:not(:disabled), select { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+button:not(:disabled):active { transform: scale(0.985); }
+button:focus-visible, select:focus-visible, [role='switch']:focus-visible { outline: 2px solid #27a85a; outline-offset: 2px; }
