@@ -1,7 +1,15 @@
 // Dashboard status-mapping tests. Run with:  npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toDashboardStatus, isKnownStatus, mergeLive } from './useLiveLamps.js';
+import {
+  toDashboardStatus,
+  isKnownStatus,
+  mergeLive,
+  setControlFromStream,
+  subscribeControl,
+  getControlSnapshot,
+  controlPushIsFresh,
+} from './useLiveLamps.js';
 
 test('firmware statuses map to the existing dashboard statuses', () => {
   const expected = {
@@ -86,4 +94,25 @@ test('without the receiver the dashboard falls back to demo data', () => {
   const r = mergeLive(sample, { connected: false, lamps: [] });
   assert.equal(r.mode, 'demo');
   assert.equal(r.devices, sample);
+});
+
+test('pushed relay-control state: stored, announced to subscribers, fresh only while pushes keep arriving', () => {
+  setControlFromStream(null);
+  assert.equal(getControlSnapshot(), null);
+  assert.equal(controlPushIsFresh(), false);
+  let calls = 0;
+  const off = subscribeControl(() => (calls += 1));
+  const view = { want: true, applied: null, controllerOnline: true, pending: true };
+  setControlFromStream(view, 1000);
+  assert.deepEqual(getControlSnapshot(), { view, at: 1000 });
+  assert.equal(calls, 1);
+  assert.equal(controlPushIsFresh(12000, 1000 + 11999), true);
+  assert.equal(controlPushIsFresh(12000, 1000 + 12000), false); // pushes stopped: Controls must go back to polling
+  setControlFromStream(null); // stream dropped
+  assert.equal(getControlSnapshot(), null);
+  assert.equal(calls, 2);
+  off();
+  setControlFromStream(view);
+  assert.equal(calls, 2); // unsubscribed
+  setControlFromStream(null);
 });

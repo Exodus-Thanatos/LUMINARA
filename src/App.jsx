@@ -1133,7 +1133,7 @@
 // };
 
 // export default App;
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   LineChart,
   Line,
@@ -1169,7 +1169,7 @@ const loadMap = () =>
   MapScreenComp
     ? Promise.resolve(MapScreenComp)
     : import('./StreetlightMap.jsx').then((m) => (MapScreenComp = memo(m.default)));
-import { useLiveLamps, mergeLive, byLampId } from './useLiveLamps.js';
+import { useLiveLamps, mergeLive, byLampId, subscribeControl, getControlSnapshot, controlPushIsFresh } from './useLiveLamps.js';
 import CityIntro from './CityIntro.jsx';
 import { shouldPlayIntro } from './introSession.js';
 
@@ -2102,33 +2102,38 @@ const Controls = () => {
   const log = (color, text) =>
     setActivity((prev) => [{ color, time: nowLabel(), text }, ...prev].slice(0, 4));
 
-  const [ctl, setCtl] = useState(null); // null = server unreachable
-  const [checked, setChecked] = useState(false); // has the first /api/control answer arrived yet?
+  // Control state comes from two places: pushed by the receiver on the stream (instant), and /api/control (fallback + the POST reply).
+  // The newer of the two is shown. null = server unreachable.
+  const [ctlRec, setCtlRec] = useState({ view: null, at: 0 });
+  const setCtl = useCallback((v) => setCtlRec({ view: v, at: Date.now() }), []);
+  const pushed = useSyncExternalStore(subscribeControl, getControlSnapshot);
+  const ctl = pushed && pushed.at > ctlRec.at ? pushed.view : ctlRec.view;
+  const checked = !!pushed || ctlRec.at > 0; // has any answer arrived yet?
   const [busy, setBusy] = useState(false);
   const [requested, setRequested] = useState(null); // { on, at } of the last command sent from this screen
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let alive = true;
-    const poll = () =>
+    const poll = () => {
+      if (controlPushIsFresh()) return; // the receiver is pushing updates: no need to ask
       getControl()
         .then((c) => {
           if (!alive) return;
-          setChecked(true);
-          setCtl((prev) => (JSON.stringify(prev) === JSON.stringify(c) ? prev : c)); // no re-render when nothing changed
+          // no re-render when nothing changed
+          setCtlRec((prev) => (prev.at > 0 && JSON.stringify(prev.view) === JSON.stringify(c) ? prev : { view: c, at: Date.now() }));
         })
         .catch(() => {
-          if (!alive) return;
-          setChecked(true);
-          setCtl(null);
+          if (alive) setCtl(null);
         });
+    };
     poll();
     const id = setInterval(poll, 2000);
     return () => {
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [setCtl]);
 
   const pending = !!ctl?.pending;
   useEffect(() => {

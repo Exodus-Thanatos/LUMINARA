@@ -43,6 +43,22 @@ export const byLampId = (a, b) => a.id.localeCompare(b.id, undefined, { numeric:
 const clock = (iso) =>
   new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 
+// ---- Relay control state, pushed by the receiver as `event: control` on the same stream ----
+// A tiny shared store so the Controls screen can read it without opening a second connection.
+let controlSnap = null; // { view, at } or null (nothing pushed yet / stream down)
+const controlSubs = new Set();
+export const setControlFromStream = (view, at = Date.now()) => {
+  controlSnap = view ? { view, at } : null;
+  controlSubs.forEach((f) => f());
+};
+export const subscribeControl = (f) => {
+  controlSubs.add(f);
+  return () => controlSubs.delete(f);
+};
+export const getControlSnapshot = () => controlSnap;
+// true while pushes are arriving (the receiver also sends one every 5 s, so 8 s allows for a late one), so the 2 s poll can stay quiet
+export const controlPushIsFresh = (maxAgeMs = 8000, now = Date.now()) => !!controlSnap && now - controlSnap.at < maxAgeMs;
+
 export function useLiveLamps() {
   const [state, setState] = useState({ connected: false, serverTime: null, lamps: [] });
 
@@ -56,7 +72,17 @@ export function useLiveLamps() {
         /* ignore a malformed message */
       }
     });
-    es.onerror = () => setState((s) => ({ ...s, connected: false })); // the browser retries by itself
+    es.addEventListener('control', (e) => {
+      try {
+        setControlFromStream(JSON.parse(e.data));
+      } catch {
+        /* ignore a malformed message */
+      }
+    });
+    es.onerror = () => {
+      setControlFromStream(null); // stream down: Controls falls back to polling
+      setState((s) => ({ ...s, connected: false })); // the browser retries by itself
+    };
     return () => es.close();
   }, []);
 

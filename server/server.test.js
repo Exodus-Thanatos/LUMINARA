@@ -214,3 +214,108 @@ test('a duplicate refreshes the "last seen" time (node is alive) but not the dat
   assert.equal(l.link, 'ONLINE');
   assert.equal(l.lux, 153.2);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2: relay-control state is also pushed over /api/stream (event: control).
+// The existing GET/POST /api/control and GET /api/command contracts must not change.
+// ---------------------------------------------------------------------------
+const openStream = async () => {
+  const ac = new AbortController();
+  const r = await fetch(`${base}/api/stream`, { signal: ac.signal });
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  const events = [];
+  let buf = '';
+  (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const ev = /event: (\w+)/.exec(block);
+          const d = /data: (.*)/.exec(block);
+          if (ev && d) events.push({ event: ev[1], data: JSON.parse(d[1]) });
+        }
+      }
+    } catch {
+      /* aborted by the test */
+    }
+  })();
+  const waitFor = async (pred, ms = 1500) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      const f = events.find(pred);
+      if (f) return f;
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    throw new Error('timed out waiting for stream event');
+  };
+  return { events, waitFor, close: () => ac.abort() };
+};
+const controlEvents = (s) => s.events.filter((e) => e.event === 'control');
+const relayPoll = (applied, key = 'test-key') =>
+  fetch(`${base}/api/command${applied ? `?applied=${applied}` : ''}`, { headers: { 'X-Api-Key': key } });
+const postControl = (on) =>
+  fetch(`${base}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on }) });
+
+test('stream sends the current control state on connect, next to the usual snapshot', async () => {
+  const s = await openStream();
+  try {
+    await s.waitFor((e) => e.event === 'snapshot');
+    const c = await s.waitFor((e) => e.event === 'control');
+    assert.deepEqual(c.data, { want: null, applied: null, controllerOnline: false, pending: false });
+  } finally {
+    s.close();
+  }
+});
+
+test('a dashboard command is pushed immediately; the relay confirmation is pushed the moment it reports', async () => {
+  const s = await openStream();
+  try {
+    await s.waitFor((e) => e.event === 'control');
+    assert.equal((await postControl(true)).status, 200);
+    const sent = await s.waitFor((e) => e.event === 'control' && e.data.want === true);
+    assert.equal(sent.data.pending, true);
+    assert.equal(sent.data.applied, null); // a request is not a result
+
+    assert.equal((await relayPoll('on')).status, 200);
+    const done = await s.waitFor((e) => e.event === 'control' && e.data.applied === true);
+    assert.equal(done.data.pending, false);
+    assert.equal(done.data.controllerOnline, true);
+  } finally {
+    s.close();
+  }
+});
+
+test('no push when nothing changed (repeated relay polls are silent); a wrong key pushes nothing', async () => {
+  const s = await openStream();
+  try {
+    await s.waitFor((e) => e.event === 'control');
+    await relayPoll('off'); // first contact: relay comes online and reports OFF -> one push
+    await s.waitFor((e) => e.event === 'control' && e.data.controllerOnline === true);
+    const n = controlEvents(s).length;
+    await relayPoll('off');
+    await relayPoll('off');
+    assert.equal((await relayPoll('on', 'wrong-key')).status, 401);
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(controlEvents(s).length, n);
+  } finally {
+    s.close();
+  }
+});
+
+test('existing control contract is unchanged: GET/POST /api/control shape and /api/command reply', async () => {
+  const c0 = await (await fetch(`${base}/api/control`)).json();
+  assert.deepEqual(Object.keys(c0).sort(), ['applied', 'controllerOnline', 'pending', 'want']);
+  assert.equal((await postControl('yes')).status, 400); // still validated
+  const posted = await (await postControl(false)).json();
+  assert.equal(posted.want, false);
+  assert.equal(posted.pending, true);
+  const reply = await (await relayPoll('on')).json();
+  assert.deepEqual(reply, { on: false }); // the relay still just gets { on: want }
+  assert.equal((await relayPoll(undefined, 'wrong-key')).status, 401);
+});

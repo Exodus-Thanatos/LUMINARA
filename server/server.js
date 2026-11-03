@@ -366,6 +366,13 @@ function broadcast() {
   for (const res of clients) res.write(data);
 }
 
+// Phase 2: the dashboard also gets the relay-control state pushed over the same /api/stream (event: control),
+// so it no longer has to wait for its own poll. Old clients ignore unknown events; GET /api/control is unchanged.
+function broadcastControl() {
+  const data = `event: control\ndata: ${JSON.stringify(controlView())}\n\n`;
+  for (const res of clients) res.write(data);
+}
+
 const json = (res, code, obj) => {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(obj));
@@ -428,6 +435,7 @@ export const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/stream') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot())}\n\n`);
+    res.write(`event: control\ndata: ${JSON.stringify(controlView())}\n\n`);
     clients.add(res);
     req.on('close', () => clients.delete(res));
     return undefined;
@@ -451,6 +459,7 @@ export const server = http.createServer((req, res) => {
       }
       if (!b || typeof b.on !== 'boolean') return json(res, 400, { ok: false, code: 'invalid_on', error: 'on must be true or false' });
       control.want = b.on;
+      broadcastControl();
       json(res, 200, controlView());
     });
     return undefined;
@@ -459,9 +468,11 @@ export const server = http.createServer((req, res) => {
   // Relay ESP32 polls this (needs the device key). ?applied=on|off tells the server what the relay is doing right now.
   if (url.pathname === '/api/command' && req.method === 'GET') {
     if (!keyOk(req.headers['x-api-key'])) return json(res, 401, { ok: false, code: 'bad_api_key', error: 'bad api key' });
+    const before = JSON.stringify(controlView());
     const a = url.searchParams.get('applied');
     if (a === 'on' || a === 'off') control.appliedOn = a === 'on';
     control.lastPollMs = Date.now();
+    if (JSON.stringify(controlView()) !== before) broadcastControl(); // only when something the dashboard shows has changed
     return json(res, 200, { on: control.want });
   }
 
@@ -479,7 +490,10 @@ export const resetForTests = () => {
 // Only start listening when run directly (`node server/server.js`), not when imported by the tests.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   // Re-send the snapshot every 5 s so a silent node flips to STALE/OFFLINE without needing a new packet.
-  setInterval(broadcast, 5000);
+  setInterval(() => {
+    broadcast();
+    broadcastControl(); // also lets "controller offline" show up without a poll
+  }, 5000);
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`LUMINARA receiver listening on port ${PORT} (stale after ${STALE_AFTER_MS / 1000} s, offline after ${OFFLINE_AFTER_MS / 1000} s)`);
     if (DEVICE_KEY === 'dev-key-change-me') console.log('WARNING: using the default DEVICE_KEY. Set your own: DEVICE_KEY=... node server/server.js');

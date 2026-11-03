@@ -1,4 +1,8 @@
-# Relay switching latency: options for FUTURE approval (nothing here was implemented in Phase 1)
+# Relay switching latency
+
+**Status after Phase 2:** A (immediate report) and the dashboard side of C (control state pushed on the stream) are DONE, see `PHASE2_CHANGES.md`.
+Still open: B/C for the relay's own poll (Stage 2: server holds the relay's request), D, and the repeat-command issue (Stage 4).
+The text below is the original analysis (before Phase 2).
 
 Phase 1 changed only the dashboard's presentation of the Turn ON / Turn OFF flow. The wait itself comes from the
 relay round trip, which lives in firmware and server code that Phase 1 did not touch.
