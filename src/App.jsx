@@ -1159,6 +1159,7 @@ import {
   X,
 } from 'lucide-react';
 import SettingsScreen from './Settings.jsx';
+import PzemPanel from './PzemPanel.jsx';
 import { CardTitle } from './uiKit.jsx';
 import { STORAGE_SAMPLE, readShowSample } from './streetlightMapData.js';
 
@@ -1539,6 +1540,8 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
           </Card>
         ))}
       </div>
+
+      <PzemPanel Card={Card} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.9fr_1fr] gap-6 lg:gap-8 items-start">
         <div>

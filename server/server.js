@@ -239,6 +239,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { validatePzem, recordPzem, pzemView, pzemHistory, resetPzem, HISTORY_RANGES } from './pzem.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 // Shared secret. The ESP32 sends it in the "X-Api-Key" header; set the same value in the .ino.
@@ -476,6 +477,45 @@ export const server = http.createServer((req, res) => {
     return json(res, 200, { on: control.want });
   }
 
+  // ---- PZEM extension monitoring: its own endpoints, independent of lamp telemetry and relay control ----
+  // The ESP32 posts a reading (or a "meter not answering" status) here, with the device key.
+  if (req.method === 'POST' && url.pathname === '/api/pzem') {
+    if (!keyOk(req.headers['x-api-key'])) return json(res, 401, { ok: false, code: 'bad_api_key', error: 'bad api key' });
+    let raw = '';
+    let tooBig = false;
+    req.on('data', (c) => {
+      if (tooBig) return;
+      raw += c;
+      if (raw.length > 1000) {
+        tooBig = true;
+        json(res, 413, { ok: false, code: 'too_large', error: 'body too large' });
+        req.resume();
+      }
+    });
+    req.on('end', () => {
+      if (tooBig) return;
+      let body;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return json(res, 400, { ok: false, code: 'invalid_json', error: 'invalid JSON' });
+      }
+      const v = validatePzem(body);
+      if (!v.ok) return json(res, 400, { ok: false, code: v.code, error: v.error });
+      const r = recordPzem(v.packet);
+      json(res, 200, { ok: true, accepted: r.accepted, duplicate: r.duplicate });
+    });
+    return undefined;
+  }
+  // Dashboard: latest reading + status.
+  if (req.method === 'GET' && url.pathname === '/api/pzem') return json(res, 200, pzemView());
+  // Dashboard: power history. ?range=1h|6h|24h
+  if (req.method === 'GET' && url.pathname === '/api/pzem/history') {
+    const h = pzemHistory(url.searchParams.get('range') || '1h');
+    if (!h) return json(res, 400, { ok: false, code: 'invalid_range', error: `range must be one of ${Object.keys(HISTORY_RANGES).join(', ')}` });
+    return json(res, 200, h);
+  }
+
   return json(res, 404, { error: 'not found' });
 });
 
@@ -485,6 +525,7 @@ export const resetForTests = () => {
   control.want = null;
   control.appliedOn = null;
   control.lastPollMs = null;
+  resetPzem();
 };
 
 // Only start listening when run directly (`node server/server.js`), not when imported by the tests.

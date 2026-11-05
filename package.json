@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "server": "node server/server.js",
     "test-data": "node server/send-test-data.js",
-    "test": "node --test server/server.test.js src/useLiveLamps.test.js"
+    "test": "node --test server/server.test.js server/pzem.test.js src/useLiveLamps.test.js src/pzemFormat.test.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

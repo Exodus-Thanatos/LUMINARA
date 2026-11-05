@@ -319,3 +319,61 @@ test('existing control contract is unchanged: GET/POST /api/control shape and /a
   assert.deepEqual(reply, { on: false }); // the relay still just gets { on: want }
   assert.equal((await relayPoll(undefined, 'wrong-key')).status, 401);
 });
+
+// ---------------------------------------------------------------------------
+// PZEM extension monitoring: separate endpoints, separate data.
+// ---------------------------------------------------------------------------
+const pzemBody = (over = {}) => ({ ok: true, seq: 1, voltage: 230.1, current: 2.5, power: 570.2, energy: 3.21, frequency: 60, pf: 0.98, ...over });
+const postPzem = (body, key = 'test-key') =>
+  fetch(`${base}/api/pzem`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Api-Key': key }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+
+test('POST /api/pzem needs the device key; GET /api/pzem starts as "none"', async () => {
+  assert.equal((await postPzem(pzemBody(), 'wrong')).status, 401);
+  assert.equal((await fetch(`${base}/api/pzem`)).status, 200);
+  assert.equal((await (await fetch(`${base}/api/pzem`)).json()).status, 'none');
+});
+
+test('a posted PZEM reading shows up on GET /api/pzem and in the history', async () => {
+  const r = await postPzem(pzemBody());
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true, accepted: true, duplicate: false });
+  const v = await (await fetch(`${base}/api/pzem`)).json();
+  assert.equal(v.status, 'live');
+  assert.equal(v.reading.voltage, 230.1);
+  assert.equal(v.reading.power, 570.2);
+  const h = await (await fetch(`${base}/api/pzem/history?range=1h`)).json();
+  assert.equal(h.points.length, 60);
+  assert.equal(h.points.filter((p) => p.samples > 0).length, 1);
+  assert.equal((await fetch(`${base}/api/pzem/history?range=bogus`)).status, 400);
+});
+
+test('PZEM input is validated: bad JSON, bad values and oversize bodies are refused', async () => {
+  assert.equal((await postPzem('{nope')).status, 400);
+  const bad = await postPzem(pzemBody({ voltage: 9999 }));
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).code, 'invalid_voltage');
+  assert.equal((await postPzem(JSON.stringify({ ok: false, reason: 'x'.repeat(2000) }))).status, 413);
+});
+
+test('PZEM data is kept apart: it never appears in lamp telemetry, the stream snapshot or relay control', async () => {
+  await postPzem(pzemBody());
+  const lamps = await (await fetch(`${base}/api/lamps`)).json();
+  assert.deepEqual(lamps.lamps, []);
+  assert.equal(JSON.stringify(lamps).includes('voltage'), false);
+  const control = await (await fetch(`${base}/api/control`)).json();
+  assert.deepEqual(Object.keys(control).sort(), ['applied', 'controllerOnline', 'pending', 'want']);
+  // and the other way round: relay and lamp traffic does not touch the PZEM state
+  await fetch(`${base}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: true }) });
+  await fetch(`${base}/api/command?applied=on`, { headers: { 'X-Api-Key': 'test-key' } });
+  const v = await (await fetch(`${base}/api/pzem`)).json();
+  assert.equal(v.status, 'live');
+  assert.equal(v.reading.voltage, 230.1);
+});
+
+test('a "meter not answering" packet is accepted and reported as pzem_offline', async () => {
+  await postPzem(pzemBody({ seq: 1 }));
+  assert.equal((await postPzem({ ok: false, seq: 2, errors: 5, reason: 'no_response' })).status, 200);
+  const v = await (await fetch(`${base}/api/pzem`)).json();
+  assert.equal(v.status, 'pzem_offline');
+  assert.equal(v.errors, 5);
+});

@@ -123,7 +123,7 @@ const Settings = ({ Page, Header, Card, compactMap, onCompactMapChange }) => {
                 <option value="utc">(GMT+0) UTC</option>
               </select>
             </Field>
-            <Field label="Low Voltage Warning Threshold" hint="Lamp nodes do not measure voltage yet, so this value has no effect.">
+            <Field label="Low Voltage Warning Threshold" hint="Not connected: the PZEM voltage on the Dashboard is not compared with this value, so it has no effect yet.">
               <div className="relative">
                 <input className={`${inputCls} pr-16`} placeholder="Below 200V" />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[#6b7a90]">Volts</span>

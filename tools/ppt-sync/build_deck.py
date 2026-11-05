@@ -257,7 +257,8 @@ def new_slide(prs, title, notes):
 # ------------------------------------------------------------------ main
 DEMO_NOTE = "DEMONSTRATION DATA: the receiver is not connected, so the site shows its built-in demo data (19 planned lamps, 3 installed). The badge at the bottom right of the slide is part of the real site."
 SCREENS = [
-    ("Dashboard", "dashboard", "Dashboard Overview. Real status counts come from the receiver when it is connected; here they are demo values. " + DEMO_NOTE),
+    ("Dashboard", "dashboard", "Dashboard Overview with the Extension Power Monitoring panel collapsed (one Voltage card). Lamp counts come from the receiver when it is connected; here they are demo values. The voltage shown is SIMULATED TEST DATA (tagged TEST DATA on the card): no PZEM meter is connected yet. " + DEMO_NOTE),
+    ("Dashboard", "dashboard_pzem", "Dashboard with the Extension Power Monitoring panel EXPANDED (click the Voltage card): the other five readings, meter status and the power-consumption history appear underneath; click the Voltage card again to collapse. The values shown are SIMULATED TEST DATA (the panel itself shows a TEST DATA tag): no meter is connected yet. With real hardware the tag is not shown. " + DEMO_NOTE),
     ("Streetlights", "monitoring", "Streetlight Monitoring: filters, panel-feed card (sample data) and the lamp table (lux, battery, signal). " + DEMO_NOTE),
     ("Streetlight Map", "map", "Streetlight Map: Leaflet map (base-map tiles are not captured offline), KPI cards, filters, CSV import/export. 28 sample markers have placeholder coordinates, as the banner says. " + DEMO_NOTE),
     ("DETAILS", "details", "Streetlight Details for L-008: sample readings (labelled SAMPLE DATA). " + DEMO_NOTE),
@@ -266,6 +267,17 @@ SCREENS = [
     ("Settings", "settings", "Settings, Profile & Account. Compact Map View is WORKING (same setting as the map's 'Show sample locations'). Everything tagged UI ONLY is a layout preview with no backend. Dark Theme is deferred."),
     ("SYSTEM", "system", "Settings, System & Notifications. All items are UI ONLY / not connected (no email/SMS service, lamp nodes do not measure voltage, the server keeps no history to export)."),
 ]
+
+def pzem_stub(route, request):
+    import math, time as _t
+    if "/api/pzem/history" in request.url:
+        now = int(_t.time() // 60) * 60000
+        pts = [{"t": now - (59 - i) * 60000, "powerW": round(260 + 110 * math.sin(i / 7.0) + 25 * math.sin(i / 2.3), 1), "maxPowerW": round(300 + 110 * math.sin(i / 7.0), 1), "voltageV": 229.8, "currentA": 1.2, "energyKwh": round(12.0 + i * 0.0045, 3), "samples": 12} for i in range(60)]
+        body = {"range": "1h", "stepMs": 60000, "points": pts, "includesTestData": True, "summary": {"avgPowerW": 262.4, "peakPowerW": 414.0, "usedKwh": 0.266}}
+    else:
+        body = {"status": "live", "source": "test", "ageMs": 3000, "staleAfterMs": 15000, "errors": 0, "reason": None, "readingAgeMs": 3000,
+                "reading": {"voltage": 229.8, "current": 1.234, "power": 280.5, "energy": 12.345, "frequency": 60.0, "pf": 0.99, "alarm": False}}
+    route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
 
 def main():
     prs = Presentation(SRC)
@@ -279,6 +291,8 @@ def main():
         pg = ctx.new_page()
         # the only mocked call: /api/control, so the Controls card shows a normal "relay offline" state instead of an error
         pg.route("**/api/control", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({"want": None, "applied": None, "controllerOnline": False, "pending": False})))
+        import re as _re
+        pg.route(_re.compile(r".*/api/pzem(/history.*)?$"), pzem_stub)   # TEST DATA for the new panel (no meter yet)
         def boot(width, height):
             pg.set_viewport_size({"width": width, "height": height}); pg.goto(BASE); pg.add_style_tag(content=FORCE_FONT)
             pg.click("text=Skip intro"); pg.wait_for_selector(".ci-root", state="detached"); pg.click("button[type=submit]")
@@ -293,6 +307,10 @@ def main():
         for label, key, _ in SCREENS:
             if key == "details":
                 nav("Dashboard"); pg.click("text=Lamp fault detected"); pg.wait_for_timeout(900)
+            elif key == "dashboard_pzem":
+                nav("Dashboard"); pg.click("section[aria-label='Extension power monitoring'] button[aria-expanded]"); pg.wait_for_timeout(1500)
+                pg.evaluate("()=>{const s=document.querySelector(\"section[aria-label='Extension power monitoring']\");window.scrollTo(0, s.getBoundingClientRect().top + window.scrollY - 24)}"); pg.wait_for_timeout(400)
+                pages[key] = pg.evaluate(EXTRACT_JS); pg.evaluate("window.scrollTo(0,0)"); continue
             elif key == "system":
                 pg.click("role=tab[name='System & Notifications']"); pg.wait_for_timeout(500)
             else:
