@@ -1,7 +1,7 @@
 // PZEM panel wording/formatting tests. Run with:  npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { describePzem, fmtAgo, fmtPower, READING_CARDS, historyRows } from './pzemFormat.js';
+import { describePzem, fmtAgo, fmtPower, READING_CARDS, historyRows, historySeries, readingLevel } from './pzemFormat.js';
 
 const reading = { voltage: 229.84, current: 1.2346, power: 280.55, energy: 12.3456, frequency: 59.98, pf: 0.987, alarm: false };
 const live = { status: 'live', source: 'hardware', ageMs: 3000, reading, readingAgeMs: 3000 };
@@ -48,4 +48,29 @@ test('history rows keep gaps as null (no false zero-power points)', () => {
   const rows = historyRows({ points: [{ t: 1, powerW: 10, maxPowerW: 12, samples: 3 }, { t: 2, powerW: null, maxPowerW: null, samples: 0 }] });
   assert.deepEqual(rows, [{ t: 1, powerW: 10, maxPowerW: 12 }, { t: 2, powerW: null, maxPowerW: null }]);
   assert.deepEqual(historyRows(null), []);
+});
+
+
+
+test('voltage and frequency levels follow the guide ranges', () => {
+  assert.equal(readingLevel('voltage', 230).level, 'normal');
+  assert.equal(readingLevel('voltage', 200).level, 'warning');
+  assert.equal(readingLevel('voltage', 150).level, 'critical');
+  assert.equal(readingLevel('voltage', 270).label, 'Very high');
+  assert.equal(readingLevel('frequency', 60).level, 'normal');
+  assert.equal(readingLevel('frequency', 62.5).level, 'critical');
+});
+
+test('power factor is only judged while a load draws power; zero is a reading, null is unavailable', () => {
+  assert.equal(readingLevel('pf', 0.5, { power: 0 }).label, 'No load');
+  assert.equal(readingLevel('pf', 0.5, { power: 100 }).level, 'critical');
+  assert.equal(readingLevel('voltage', 0).level, 'critical');
+  assert.equal(readingLevel('voltage', null).label, 'Unavailable');
+  assert.equal(readingLevel('current', 3).level, 'none');
+});
+
+test('history rows keep gaps as null, never zero', () => {
+  const rows = historySeries({ points: [{ t: 1, powerW: null, maxPowerW: null, voltageV: null, currentA: null, energyKwh: null }] });
+  assert.equal(rows[0].voltageV, null);
+  assert.equal(rows[0].powerW, null);
 });

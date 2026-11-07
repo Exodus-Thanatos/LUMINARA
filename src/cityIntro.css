@@ -167,17 +167,12 @@
   background: radial-gradient(closest-side, rgba(5, 11, 34, 0.6), rgba(5, 11, 34, 0));
 }
 .ci-logo {
+  display: block;
   width: 68px;
   height: 68px;
   margin: 0 auto 16px;
-  border-radius: 9999px;
-  background: #27a85a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 24px;
-  box-shadow: 0 0 28px rgba(39, 168, 90, 0.45);
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(198, 255, 255, 0.35));
 }
 .ci-title {
   margin: 0;

@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>luminara</title>
+    <script>
+      // Apply the saved theme before the first paint (no light flash). Same key as src/theme.js.
+      try { if (localStorage.getItem('luminara.theme.v1') === 'dark') { document.documentElement.classList.add('dark'); document.documentElement.style.colorScheme = 'dark'; } } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

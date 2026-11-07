@@ -261,7 +261,7 @@ const CityIntro = ({ onDone }) => {
           data-ready={ready ? 'true' : 'false'}
           onAnimationEnd={(e) => e.animationName === 'ci-contentReveal' && setReady(true)}
         >
-          <div className="ci-logo">SL</div>
+          <img className="ci-logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="68" height="68" />
           <h1 className="ci-title">LUMINARA</h1>
           <p className="ci-sub">Smart Streetlight System</p>
           <p className="ci-place">Barangay 6, Carmona, Cavite</p>

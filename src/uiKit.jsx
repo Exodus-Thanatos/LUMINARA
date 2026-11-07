@@ -20,16 +20,21 @@ export const StatusTag = ({ kind = 'ui' }) => {
     ui: ['UI ONLY · NOT CONNECTED', 'bg-[#eef1f5] text-[#6b7a90]'],
     sample: ['SAMPLE PROFILE', 'bg-[#fdf2d9] text-[#8a6410]'],
     later: ['NOT AVAILABLE YET', 'bg-[#eef1f5] text-[#6b7a90]'],
+    prototype: ['PROTOTYPE · THIS BROWSER', 'bg-[#fdf2d9] text-[#8a6410]'],
   };
   const [label, cls] = map[kind];
   return <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider ${cls}`}>{label}</span>;
 };
 
-export const Field = ({ label, hint, children }) => (
+export const Field = ({ label, hint, error, children }) => (
   <label className="block mb-4">
     <span className="block text-xs font-semibold text-[#14233c] mb-1.5">{label}</span>
     {children}
-    {hint && <span className="block text-[11px] text-[#6b7a90] mt-1.5">{hint}</span>}
+    {error ? (
+      <span role="alert" className="block text-[11px] font-semibold text-[#e04040] mt-1.5">{error}</span>
+    ) : (
+      hint && <span className="block text-[11px] text-[#6b7a90] mt-1.5">{hint}</span>
+    )}
   </label>
 );
 

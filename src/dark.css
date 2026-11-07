@@ -1,0 +1,109 @@
+/* ==========================================================================
+   LUMINARA dark theme. Active only while <html> has the `dark` class (see src/theme.js).
+   Light mode is untouched: nothing here applies without that class.
+   The app colours its UI with fixed hex classes, so each one used is re-mapped below
+   (backgrounds, text, borders, hover states). Brand greens, solid status colours and the
+   dark sidebar / header are left as they are.
+   ========================================================================== */
+
+html.dark body { background-color: #0b1320; color: #e8eef7; }
+html.dark { --lm-card: #14233b; }
+
+html.dark .bg-\[\#f3f6f9\] { background-color: #0b1320 }
+html.dark .bg-\[\#f8fafc\] { background-color: #101b2e }
+html.dark .bg-\[\#f6f8fa\] { background-color: #101b2e }
+html.dark .bg-\[\#fafcfd\] { background-color: #101b2e }
+html.dark .bg-\[\#eceff3\] { background-color: #26364f }
+html.dark .bg-\[\#eef1f5\] { background-color: #26364f }
+html.dark .bg-\[\#e3e8ee\] { background-color: #2a3c58 }
+html.dark .bg-\[\#e6ebf1\] { background-color: #2a3c58 }
+html.dark .bg-\[\#eaeff4\] { background-color: #22344f }
+html.dark .bg-\[\#e9eef3\] { background-color: #22344f }
+html.dark .bg-\[\#cfd6df\] { background-color: #4a5c78 }
+html.dark .bg-\[\#e3f4ea\] { background-color: rgba(39,168,90,.18) }
+html.dark .bg-\[\#e8f6ee\] { background-color: rgba(39,168,90,.16) }
+html.dark .bg-\[\#e0f3e8\] { background-color: rgba(39,168,90,.18) }
+html.dark .bg-\[\#f4fbf7\] { background-color: rgba(39,168,90,.09) }
+html.dark .bg-\[\#f3fbf6\] { background-color: rgba(39,168,90,.09) }
+html.dark .bg-\[\#fff3d6\] { background-color: rgba(240,168,46,.18) }
+html.dark .bg-\[\#fdf2d9\] { background-color: rgba(240,168,46,.16) }
+html.dark .bg-\[\#fffaf0\] { background-color: rgba(240,168,46,.08) }
+html.dark .bg-\[\#fff8e6\] { background-color: rgba(240,168,46,.10) }
+html.dark .bg-\[\#fde8e8\] { background-color: rgba(224,72,72,.16) }
+html.dark .bg-\[\#fdeaea\] { background-color: rgba(224,72,72,.16) }
+html.dark .bg-\[\#fdecec\] { background-color: rgba(224,72,72,.16) }
+html.dark .bg-\[\#fff6f6\] { background-color: rgba(224,72,72,.08) }
+html.dark .bg-\[\#e8effc\] { background-color: rgba(59,130,246,.16) }
+html.dark .bg-\[\#e6edfc\] { background-color: rgba(59,130,246,.16) }
+html.dark .bg-white { background-color: #14233b }
+html.dark .bg-gray-50, html.dark .bg-gray-100 { background-color: #1b2c47 }
+html.dark .bg-white\/95 { background-color: rgba(20,35,59,.95) }
+html.dark .hover\:bg-white:hover { background-color: #1b2c47 }
+html.dark .hover\:bg-gray-50:hover, html.dark .hover\:bg-gray-100:hover { background-color: #1b2c47 }
+html.dark .hover\:bg-\[\#f3f6f9\]:hover { background-color: #1b2c47 }
+html.dark .active\:bg-\[\#f3f6f9\]:active { background-color: #1b2c47 }
+html.dark .hover\:bg-\[\#f8fafc\]:hover { background-color: #1b2c47 }
+html.dark .active\:bg-\[\#f8fafc\]:active { background-color: #1b2c47 }
+html.dark .hover\:bg-\[\#fafcfd\]:hover { background-color: #1b2c47 }
+html.dark .active\:bg-\[\#fafcfd\]:active { background-color: #1b2c47 }
+html.dark .hover\:bg-\[\#eaeff4\]:hover { background-color: #26395a }
+html.dark .hover\:bg-\[\#e9eef3\]:hover { background-color: #26395a }
+html.dark .hover\:bg-\[\#e1e6ec\]:hover { background-color: #26395a }
+html.dark .hover\:bg-\[\#fbd5d5\]:hover { background-color: rgba(224,72,72,.28) }
+html.dark .hover\:bg-\[\#d3eddc\]:hover { background-color: rgba(39,168,90,.28) }
+html.dark [role='switch'] span.shadow, html.dark .w-1\.5.h-1\.5.bg-white { background-color: #fff }
+html.dark .text-\[\#14233c\] { color: #e8eef7 }
+html.dark .text-\[\#6b7a90\] { color: #9db0c8 }
+html.dark .text-\[\#5b6b82\] { color: #aebcd0 }
+html.dark .text-\[\#8895a7\] { color: #8798b0 }
+html.dark .text-\[\#9aa7b8\] { color: #7d8da6 }
+html.dark .text-\[\#1f9a52\] { color: #4cd187 }
+html.dark .text-\[\#1b7a42\] { color: #4cd187 }
+html.dark .text-\[\#c98a0a\] { color: #f5b94a }
+html.dark .text-\[\#b9770e\] { color: #f0b24a }
+html.dark .text-\[\#8a6410\] { color: #f0c36a }
+html.dark .text-\[\#7a5a00\] { color: #f0c36a }
+html.dark .text-\[\#f0a020\] { color: #f5b94a }
+html.dark .text-\[\#e04040\] { color: #ff7676 }
+html.dark .text-\[\#e04848\] { color: #ff7676 }
+html.dark .text-\[\#b32f2f\] { color: #ff8a8a }
+html.dark .hover\:text-\[\#14233c\]:hover { color: #ffffff }
+html.dark .hover\:text-\[\#e04040\]:hover { color: #ff7676 }
+html.dark .placeholder\:text-\[\#9aa7b8\]::placeholder { color: #7d8da6 }
+html.dark .disabled\:text-\[\#9aa7b8\]:disabled { color: #7d8da6 }
+html.dark .border-\[\#e6ebf1\] { border-color: #2a3c58 }
+html.dark .border-\[\#e1e7ee\] { border-color: #2f4262 }
+html.dark .border-\[\#eef1f5\] { border-color: #26364f }
+html.dark .border-\[\#d5dce6\] { border-color: #35496a }
+html.dark .border-\[\#cfd6df\] { border-color: #3a4e70 }
+html.dark .divide-\[\#eef1f5\] > :not(:last-child) { border-color: #26364f }
+html.dark .border-\[\#f6d587\] { border-color: rgba(240,184,74,.38) }
+html.dark .border-\[\#f0d58a\] { border-color: rgba(240,184,74,.38) }
+html.dark .border-\[\#9dd5b2\] { border-color: rgba(39,168,90,.45) }
+html.dark .border-\[\#f0a3a3\] { border-color: rgba(224,72,72,.45) }
+html.dark .text-\[\#c3cfdf\], html.dark .text-\[\#cdd7e5\], html.dark .text-\[\#d5deea\] { color: #cdd7e5 }
+
+/* ---- shadows read too harsh on dark surfaces ---- */
+html.dark .shadow, html.dark .shadow-sm, html.dark .shadow-md, html.dark .shadow-xl { --tw-shadow-color: rgba(0, 0, 0, .55); }
+
+/* ---- keyboard focus + selection ---- */
+html.dark ::selection { background: rgba(39, 168, 90, .35); color: #fff; }
+
+/* ---- charts (Recharts): axis text, grid, cursor and the default tooltip ---- */
+html.dark .recharts-cartesian-axis-tick-value, html.dark .recharts-text { fill: #9db0c8; }
+html.dark .recharts-cartesian-grid line, html.dark .recharts-cartesian-grid-horizontal line, html.dark .recharts-cartesian-grid-vertical line { stroke: #2a3c58; }
+html.dark .recharts-tooltip-cursor { stroke: #4a5c78; }
+html.dark .recharts-default-tooltip { background-color: #14233b !important; border-color: #2f4262 !important; }
+html.dark .recharts-default-tooltip .recharts-tooltip-label, html.dark .recharts-default-tooltip .recharts-tooltip-item { color: #e8eef7 !important; }
+html.dark .recharts-legend-item-text { color: #aebcd0 !important; }
+
+/* ---- Streetlight Map (Leaflet): darken the map tiles, theme the popups and controls ---- */
+html.dark .leaflet-container { background: #0f1a2c; }
+html.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.8); }
+html.dark .leaflet-popup-content-wrapper, html.dark .leaflet-popup-tip { background: #14233b; color: #e8eef7; box-shadow: 0 4px 18px rgba(0, 0, 0, .6); }
+html.dark .leaflet-popup-close-button { color: #9db0c8 !important; }
+html.dark .leaflet-bar a, html.dark .leaflet-bar a:hover { background-color: #14233b; color: #e8eef7; border-bottom-color: #2f4262; }
+html.dark .leaflet-bar a:hover { background-color: #1b2c47; }
+html.dark .leaflet-control-attribution { background: rgba(11, 19, 32, .75) !important; color: #9db0c8; }
+html.dark .leaflet-control-attribution a { color: #7fb4ff; }
+html.dark .leaflet-tooltip { background: #14233b; color: #e8eef7; border-color: #2f4262; }

@@ -60,14 +60,14 @@ export const getControlSnapshot = () => controlSnap;
 export const controlPushIsFresh = (maxAgeMs = 8000, now = Date.now()) => !!controlSnap && now - controlSnap.at < maxAgeMs;
 
 export function useLiveLamps() {
-  const [state, setState] = useState({ connected: false, serverTime: null, lamps: [] });
+  const [state, setState] = useState({ connected: false, serverTime: null, receivedAt: null, lamps: [] });
 
   useEffect(() => {
     const es = new EventSource('/api/stream');
     es.addEventListener('snapshot', (e) => {
       try {
         const data = JSON.parse(e.data);
-        setState({ connected: true, serverTime: data.serverTime, lamps: data.lamps });
+        setState({ connected: true, serverTime: data.serverTime, receivedAt: Date.now(), lamps: data.lamps });
       } catch {
         /* ignore a malformed message */
       }

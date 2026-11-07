@@ -1133,7 +1133,7 @@
 // };
 
 // export default App;
-import React, { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { createContext, memo, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   LineChart,
   Line,
@@ -1149,7 +1149,6 @@ import {
   Clock,
   Sun,
   Settings,
-  Bell,
   Search,
   ChevronLeft,
   ChevronRight,
@@ -1157,10 +1156,28 @@ import {
   MapPin,
   Menu,
   X,
+  BookOpen,
+  CircleQuestionMark,
+  LifeBuoy,
 } from 'lucide-react';
 import SettingsScreen from './Settings.jsx';
 import PzemPanel from './PzemPanel.jsx';
+import ThemeSwitch from './ThemeSwitch.jsx';
+import HelpCenter from './HelpCenter.jsx';
+import Tutorial from './Tutorial.jsx';
+import { readTutorialFlag, writeTutorialFlag } from './tutorialFlag.js';
+import NotificationCenter from './NotificationCenter.jsx';
+import FaultDetail from './FaultDetail.jsx';
+import { ConnectionBadge, AlertSummary } from './DashboardStatus.jsx';
+import { describeFault, describeFaults, SEVERITY } from './faultInfo.js';
+import { syncNotifications } from './notifications.js';
 import { CardTitle } from './uiKit.jsx';
+import { useNow } from './useNow.js';
+import { TicketModal } from './TicketDialogs.jsx';
+import { PRIORITY_BADGE, TICKET_STATUS_BADGE } from './ticketBadges.js';
+import { TechnicianPanel, Dot } from './TechnicianUI.jsx';
+import { loadUsers, saveUsers, setPresence, assignmentError, availability, USERS_KEY, USERS_EVENT } from './technicianStore.js';
+import { loadTickets, saveTickets, createTicket, updateTicket, nextTicketNumber, summarize, formatDuration, formatStamp, STORAGE_KEY, STATUSES, MIN_RESPONSES_FOR_AVG } from './maintenanceStore.js';
 import { STORAGE_SAMPLE, readShowSample } from './streetlightMapData.js';
 
 // The map (Leaflet) is loaded on demand and then kept mounted, so it is not rebuilt on every visit.
@@ -1302,26 +1319,9 @@ const VOLTAGE_DATA = [
 ];
 const fmtTime = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 
-// Maintenance (Image 4)
-// SAMPLE tickets. `ticket` is the maintenance ticket number (MT-0000); `lamp` is the lamp ID (L-000).
-const TICKETS = [
-  { id: 'MT-1048', lamp: 'L-008', where: 'Market Street', issue: 'Lamp not illuminating', priority: 'HIGH', status: 'OPEN', updated: '10:40 AM' },
-  { id: 'MT-1047', lamp: 'L-014', where: 'School Road', issue: 'No telemetry received', priority: 'MEDIUM', status: 'ASSIGNED', updated: '10:24 AM' },
-  { id: 'MT-1046', lamp: 'L-021', where: 'Park Entrance', issue: 'Intermittent voltage', priority: 'MEDIUM', status: 'IN PROGRESS', updated: '09:52 AM' },
-  { id: 'MT-1045', lamp: 'L-003', where: 'Main Road', issue: 'Photocell cleaned', priority: 'LOW', status: 'RESOLVED', updated: '09:31 AM' },
-  { id: 'MT-1044', lamp: 'L-019', where: 'Park Entrance', issue: 'Connector replaced', priority: 'LOW', status: 'RESOLVED', updated: 'Yesterday' },
-];
-const PRIORITY_BADGE = {
-  HIGH: 'bg-[#fde8e8] text-[#e04040]',
-  MEDIUM: 'bg-[#fff3d6] text-[#f0a020]',
-  LOW: 'bg-[#e3f4ea] text-[#1f9a52]',
-};
-const TICKET_STATUS_BADGE = {
-  OPEN: 'bg-[#fde8e8] text-[#e04040]',
-  ASSIGNED: 'bg-[#fff3d6] text-[#f0a020]',
-  'IN PROGRESS': 'bg-[#fff3d6] text-[#f0a020]',
-  RESOLVED: 'bg-[#e3f4ea] text-[#1f9a52]',
-};
+// Maintenance tickets are created by the user and stored by maintenanceStore.js (badges live in TicketDialogs.jsx).
+
+const LOGO_SRC = `${import.meta.env.BASE_URL}favicon.svg`; // the provided LUMINARA logo (same file as the browser favicon)
 
 /* ==========================================================================
    SHARED COMPONENTS
@@ -1335,6 +1335,16 @@ const NAV_ITEMS = [
   { id: 'controls', label: 'Controls', Icon: Sun },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
+// Help links sit under the main navigation, separated by a thin line, so the main list is unchanged.
+const HELP_NAV_ITEMS = [
+  { id: 'help', label: 'Help Center', Icon: LifeBuoy },
+  { id: 'manual', label: 'User Manual', Icon: BookOpen },
+];
+
+// Which manual article each page's help icon opens.
+const SCREEN_HELP = { dashboard: 'dashboard', monitoring: 'monitoring', details: 'monitoring', map: 'map', maintenance: 'maintenance', controls: 'controls', settings: 'settings' };
+// Shared by the header (bell, help icon) without threading props through every screen.
+const AppCtx = createContext({ screen: null, live: false, openFault: () => {}, openHelp: () => {} });
 
 const Sidebar = ({ currentScreen, setScreen, open = false, onClose = () => {} }) => (
   <aside
@@ -1345,7 +1355,7 @@ const Sidebar = ({ currentScreen, setScreen, open = false, onClose = () => {} })
   >
     <div>
       <div className="px-8 pt-8 flex items-center gap-3">
-        <div className="w-12 h-12 bg-[#27a85a] rounded-full flex items-center justify-center font-bold text-lg">SL</div>
+        <img src={LOGO_SRC} alt="" width="48" height="48" className="w-12 h-12 shrink-0 object-contain" />
         <div className="flex-1">
           <div className="font-bold text-2xl leading-tight">LUMINARA</div>
           <div className="text-xs font-bold text-[#cdd7e5]">STREETLIGHTS</div>
@@ -1354,12 +1364,15 @@ const Sidebar = ({ currentScreen, setScreen, open = false, onClose = () => {} })
           <X className="w-5 h-5" />
         </button>
       </div>
-      <nav className="mt-8 lg:mt-12 px-3.5 space-y-2.5">
-        {NAV_ITEMS.map(({ id, label, Icon }) => {
+      <nav aria-label="Main navigation" className="mt-8 lg:mt-12 px-3.5 space-y-2.5">
+        {[...NAV_ITEMS, null, ...HELP_NAV_ITEMS].map((item) => {
+          if (item === null) return <div key="divider" role="separator" className="mx-2 my-1 border-t border-[#2a3f5f]" />;
+          const { id, label, Icon } = item;
           const active = currentScreen === id || (currentScreen === 'details' && id === 'monitoring');
           return (
             <button
               key={id}
+              data-tour={`nav-${id}`}
               aria-current={active ? 'page' : undefined}
               onMouseEnter={id === 'map' ? loadMap : undefined}
               onFocus={id === 'map' ? loadMap : undefined}
@@ -1373,13 +1386,15 @@ const Sidebar = ({ currentScreen, setScreen, open = false, onClose = () => {} })
                   : 'border-transparent text-[#d5deea] hover:bg-[#1b2e4b]'
               }`}
             >
-              <Icon className={`w-5 h-5 mr-4 ${active ? 'text-[#27a85a]' : 'opacity-70'}`} />
+              <Icon aria-hidden="true" className={`w-5 h-5 mr-4 ${active ? 'text-[#27a85a]' : 'opacity-70'}`} />
               {label}
             </button>
           );
         })}
       </nav>
     </div>
+    <div>
+    <ThemeSwitch />
     <button
       title="Sign out"
       onClick={() => setScreen('login')}
@@ -1391,19 +1406,31 @@ const Sidebar = ({ currentScreen, setScreen, open = false, onClose = () => {} })
         <div className="text-xs text-[#cdd7e5]">Engineering</div>
       </div>
     </button>
+    </div>
   </aside>
 );
 
 /* Title bar + the sub-row (subtitle on the left, actions on the right) */
-const Header = ({ title, subtitle, actions }) => (
+const Header = ({ title, subtitle, actions }) => {
+  const ctx = useContext(AppCtx);
+  const helpTopic = SCREEN_HELP[ctx.screen];
+  return (
   <>
     <div className="flex justify-between items-center border-b border-[#e1e7ee] pb-4 md:pb-6">
       <h1 className="text-2xl md:text-3xl font-bold text-[#14233c]">{title}</h1>
       <div className="hidden md:flex items-center gap-4">
         <span className="text-sm font-semibold text-[#5b6b82]">Barangay 6</span>
-        <button className="w-12 h-12 bg-white border border-[#e1e7ee] rounded-full flex items-center justify-center hover:bg-gray-50" aria-label="Notifications">
-          <Bell className="w-5 h-5 text-[#5b6b82]" />
-        </button>
+        {helpTopic && (
+          <button
+            onClick={() => ctx.openHelp(helpTopic)}
+            className="w-12 h-12 bg-white border border-[#e1e7ee] rounded-full flex items-center justify-center hover:bg-gray-50"
+            aria-label="Help for this page"
+            title="Help for this page"
+          >
+            <CircleQuestionMark className="w-5 h-5 text-[#5b6b82]" aria-hidden="true" />
+          </button>
+        )}
+        <NotificationCenter live={ctx.live} onOpenFault={ctx.openFault} />
         <div className="w-12 h-12 bg-[#e0f3e8] text-[#27a85a] font-bold rounded-full flex items-center justify-center">A</div>
       </div>
     </div>
@@ -1414,10 +1441,11 @@ const Header = ({ title, subtitle, actions }) => (
       </div>
     )}
   </>
-);
+  );
+};
 
 const Page = ({ children }) => (
-  <main className="lm-page lg:ml-64 pt-[4.5rem] px-4 pb-8 md:px-6 lg:p-10 bg-[#f3f6f9] min-h-screen text-[#14233c] overflow-x-hidden">{children}</main>
+  <main id="main-content" className="lm-page lg:ml-64 pt-[4.5rem] px-4 pb-8 md:px-6 lg:p-10 bg-[#f3f6f9] min-h-screen text-[#14233c] overflow-x-hidden">{children}</main>
 );
 
 const Card = ({ big = false, className = '', children }) => (
@@ -1444,7 +1472,7 @@ const PrimaryButton = ({ className = '', ...p }) => (
 const Login = ({ onSignIn }) => (
   <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen w-full">
     <div className="lg:w-1/2 bg-[#1b3049] flex flex-col justify-center px-6 py-8 lg:px-[120px] lg:py-0">
-      <div className="w-14 h-14 lg:w-[72px] lg:h-[72px] bg-[#27a85a] rounded-full flex items-center justify-center font-bold text-xl lg:text-2xl text-white mb-5 lg:mb-10">SL</div>
+      <img src={LOGO_SRC} alt="" width="72" height="72" className="w-14 h-14 lg:w-[72px] lg:h-[72px] object-contain mb-5 lg:mb-10" />
       <h1 className="text-4xl lg:text-5xl font-bold text-white mb-2 lg:mb-4">LUMINARA</h1>
       <h2 className="text-sm lg:text-lg font-bold text-[#c3cfdf] mb-4 lg:mb-14">SMART STREETLIGHT SYSTEM</h2>
       <p className="hidden lg:block text-[28px] leading-snug text-white font-semibold mb-12">
@@ -1488,8 +1516,9 @@ const Login = ({ onSignIn }) => (
    SCREEN 2 — DASHBOARD OVERVIEW
    ========================================================================== */
 
-const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
+const Dashboard = ({ setScreen, devices, mode, lastSync, receivedAt, connecting, onOpenFault }) => {
   const live = mode === 'live';
+  const faults = useMemo(() => (live ? describeFaults(devices) : []), [live, devices]);
   const count = (st) => devices.filter((x) => x.status === st).length;
   const nOnline = count('ONLINE');
   const nAlert = count('FAULT') + count('WARNING');
@@ -1503,6 +1532,7 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
     .map((x) => ({
       id: x.id,
       dot: x.status === 'FAULT' ? 'bg-[#e04848]' : 'bg-[#f0a82e]',
+      severity: describeFault(x)?.severity,
       text: x.status === 'OFFLINE'
         ? `No signal from node (last reported ${x.reported})`
         : !x.known ? `Unrecognised status ${x.reported}` : `Reported ${x.reported}${x.comm === 'Stale' ? ' (report delayed)' : ''}`,
@@ -1522,7 +1552,11 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
   ];
   return (
     <Page>
-      <Header title="Dashboard Overview" subtitle="Good afternoon, Admin" />
+      <Header
+        title="Dashboard Overview"
+        subtitle="Good afternoon, Admin"
+        actions={<ConnectionBadge mode={mode} connecting={connecting} receivedAt={receivedAt} lastSync={lastSync} />}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-7">
         {summary.map((c) => (
@@ -1533,13 +1567,19 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
               </div>
               <div>
                 <div className="text-xs font-semibold text-[#5b6b82] uppercase">{c.label}</div>
-                <div className="text-4xl font-bold leading-tight">{c.value}</div>
+                {connecting ? (
+                  <div className="h-10 w-14 mt-1 rounded-md bg-[#e6ebf1] animate-pulse" role="status" aria-label={`Loading ${c.label}`} />
+                ) : (
+                  <div className="text-4xl font-bold leading-tight">{c.value}</div>
+                )}
               </div>
             </div>
             <div className="text-xs text-[#6b7a90] mt-3">{c.note}</div>
           </Card>
         ))}
       </div>
+
+      <AlertSummary Card={Card} live={live} connecting={connecting} devices={devices} faults={faults} onOpen={onOpenFault} />
 
       <PzemPanel Card={Card} />
 
@@ -1574,29 +1614,34 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
           <Card big className="p-6">
             <CardTitle>Recent Alerts</CardTitle>
             {live && alerts.length === 0 && <p className="text-sm text-[#6b7a90]">No active alerts.</p>}
-            {alerts.map((a, i) => (
-              <div
-                key={a.id}
-                onClick={!live && a.id === 'L-008' ? () => setScreen('details') : undefined}
-                className={`${i < alerts.length - 1 ? 'border-b-2 border-[#e6ebf1] pb-4 mb-4' : ''} ${!live && a.id === 'L-008' ? 'cursor-pointer' : ''}`}
-              >
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-4 h-4 rounded-full ${a.dot}`}></span>
-                    <span className="font-bold text-sm">{a.id}</span>
+            {alerts.map((a, i) => {
+              const Row = live ? 'button' : 'div';
+              return (
+                <Row
+                  key={a.id}
+                  {...(live ? { type: 'button', 'aria-label': `${a.id}: ${a.text}. Open fault details` } : {})}
+                  onClick={live ? () => onOpenFault(a.id) : a.id === 'L-008' ? () => setScreen('details') : undefined}
+                  className={`block w-full text-left ${i < alerts.length - 1 ? 'border-b-2 border-[#e6ebf1] pb-4 mb-4' : ''} ${live || a.id === 'L-008' ? 'cursor-pointer' : ''}`}
+                >
+                  <div className="flex justify-between items-center gap-2">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-4 h-4 rounded-full ${a.dot}`}></span>
+                      <span className="font-bold text-sm">{a.id}</span>
+                      {a.severity && <span className="text-[10px] font-bold uppercase text-[#5b6b82]">{SEVERITY[a.severity].label}</span>}
+                    </div>
+                    <span className="text-xs text-[#6b7a90]">{a.when}</span>
                   </div>
-                  <span className="text-xs text-[#6b7a90]">{a.when}</span>
-                </div>
-                <p className="text-sm text-[#6b7a90] mt-1 ml-7">{a.text}</p>
-              </div>
-            ))}
+                  <p className="text-sm text-[#6b7a90] mt-1 ml-7">{a.text}</p>
+                </Row>
+              );
+            })}
           </Card>
 
           <Card big className="p-6">
             <CardTitle>System Activity</CardTitle>
             <div className="flex justify-between items-center mb-4 text-sm">
               <span className="text-[#6b7a90]">Last sync</span>
-              <span className="font-bold">{live ? lastSync : '10:42:08 AM'}</span>
+              <span className="font-bold">{connecting ? 'Connecting…' : live ? lastSync : '10:42:08 AM'}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-[#6b7a90]">Network status</span>
@@ -1613,19 +1658,22 @@ const Dashboard = ({ setScreen, devices, mode, lastSync }) => {
    SCREEN 3 — STREETLIGHT MONITORING
    ========================================================================== */
 
-const Monitoring = ({ setScreen, devices, mode }) => {
+const Monitoring = ({ setScreen, devices, mode, onOpenFault }) => {
   const detailsEnabled = mode !== 'live'; // the Details screen is still sample data for L-008
   const streets = useMemo(() => [...new Set(devices.map((x) => x.loc.split(' • ')[0]))], [devices]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [streetFilter, setStreetFilter] = useState('ALL');
+  const [severityFilter, setSeverityFilter] = useState('ALL');
   const [page, setPage] = useState(1);
+  const faultById = useMemo(() => Object.fromEntries(devices.map((d) => [d.id, describeFault(d)])), [devices]);
 
   const q = query.trim().toLowerCase();
   const filtered = devices.filter(
     (x) =>
       (statusFilter === 'ALL' || x.status === statusFilter) &&
       (streetFilter === 'ALL' || x.loc.startsWith(streetFilter)) &&
+      (severityFilter === 'ALL' || faultById[x.id]?.severity === severityFilter) &&
       (q === '' || x.id.toLowerCase().includes(q) || x.loc.toLowerCase().includes(q))
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -1660,10 +1708,11 @@ const Monitoring = ({ setScreen, devices, mode }) => {
               value={query}
               onChange={onChange(setQuery)}
               placeholder="Search ID, location..."
+              aria-label="Search streetlights by ID or location"
               className="w-full h-11 md:h-10 pl-10 pr-3 bg-[#f8fafc] border border-[#e1e7ee] rounded-lg text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-[#27a85a]/30"
             />
           </div>
-          <select value={statusFilter} onChange={onChange(setStatusFilter)} className={`${selectCls} w-full sm:w-44`}>
+          <select value={statusFilter} onChange={onChange(setStatusFilter)} aria-label="Filter by status" className={`${selectCls} w-full sm:w-44`}>
             <option value="ALL">All statuses</option>
             <option value="ONLINE">Online</option>
             <option value="FAULT">Fault</option>
@@ -1671,12 +1720,32 @@ const Monitoring = ({ setScreen, devices, mode }) => {
             <option value="WARNING">Warning</option>
             <option value="UNINSTALLED">Uninstalled</option>
           </select>
-          <select value={streetFilter} onChange={onChange(setStreetFilter)} className={`${selectCls} w-full sm:w-44`}>
+          <select value={streetFilter} onChange={onChange(setStreetFilter)} aria-label="Filter by street" className={`${selectCls} w-full sm:w-44`}>
             <option value="ALL">All streets</option>
             {streets.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+          <select value={severityFilter} onChange={onChange(setSeverityFilter)} aria-label="Filter by fault severity" className={`${selectCls} w-full sm:w-44`}>
+            <option value="ALL">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="warning">Warning</option>
+            <option value="info">Informational</option>
+          </select>
+          {(q !== '' || statusFilter !== 'ALL' || streetFilter !== 'ALL' || severityFilter !== 'ALL') && (
+            <button
+              onClick={() => {
+                setQuery('');
+                setStatusFilter('ALL');
+                setStreetFilter('ALL');
+                setSeverityFilter('ALL');
+                setPage(1);
+              }}
+              className="h-11 md:h-10 px-3 text-sm font-bold text-[#27a85a] hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
         <span className="text-sm text-[#6b7a90] md:mr-4">{devices.filter((x) => x.status !== 'UNINSTALLED').length} installed of {devices.length}</span>
       </Card>
@@ -1756,8 +1825,13 @@ const Monitoring = ({ setScreen, devices, mode }) => {
                 <td className="text-sm">{x.rssi ?? '—'}</td>
                 <td className="text-sm text-[#6b7a90]">{x.time}</td>
                 <td className="pr-4 text-right">
-                  <button className="text-[#5b6b82] hover:text-[#14233c]" aria-label={`Actions for ${x.id}`}>
-                    <MoreHorizontal className="w-6 h-6 inline" />
+                  <button
+                    className="text-[#5b6b82] hover:text-[#14233c] disabled:opacity-30"
+                    disabled={!faultById[x.id]}
+                    onClick={() => onOpenFault(x.id)}
+                    aria-label={faultById[x.id] ? `View fault details for ${x.id}` : `No fault details for ${x.id}`}
+                  >
+                    <MoreHorizontal className="w-6 h-6 inline" aria-hidden="true" />
                   </button>
                 </td>
               </tr>
@@ -1960,14 +2034,99 @@ const Details = ({ setScreen }) => {
 
 const Maintenance = () => {
   const [filter, setFilter] = useState('ALL');
-  const rows = TICKETS.filter((t) => filter === 'ALL' || t.status === filter);
+  const [search, setSearch] = useState('');
+  // TEMPORARY PROTOTYPE: the backend has no maintenance API, so tickets live in this browser's localStorage.
+  const [tickets, setTickets] = useState(() => loadTickets());
+  // Registered users come from the prototype technician registry (Settings → Create Worker Account), read fresh each time this page opens.
+  const [users, setUsers] = useState(() => loadUsers());
+  const [dialog, setDialog] = useState(null); // { mode: 'create' } | { mode: 'view', id }
+  const [toast, setToast] = useState(null); // { kind: 'ok' | 'error', text }
+  const now = useNow(60000); // keeps "Resolved Today" correct across midnight
 
+  useEffect(() => {
+    if (!toast || toast.kind === 'error') return undefined;
+    const id = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === STORAGE_KEY) setTickets(loadTickets()); // another tab changed the tickets
+      if (e.key === USERS_KEY) setUsers(loadUsers()); // another tab registered someone or changed attendance
+    };
+    const onUsers = () => setUsers(loadUsers());
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(USERS_EVENT, onUsers);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(USERS_EVENT, onUsers);
+    };
+  }, []);
+
+  const commit = (next, okText) => {
+    setTickets(next);
+    if (saveTickets(next)) setToast({ kind: 'ok', text: okText });
+    else setToast({ kind: 'error', text: 'Saved for this session only. The browser blocked storage, so this change will be lost on refresh.' });
+  };
+
+  const term = search.trim().toLowerCase();
+  const techOf = (t) => users.find((u) => u.id === t.technicianId); // the registered technician on a ticket, if any
+  const techName = (t) => techOf(t)?.name ?? t.technician;
+  const rows = useMemo(
+    () =>
+      [...tickets]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .filter(
+          (t) =>
+            (filter === 'ALL' || t.status === filter) &&
+            (term === '' || [t.id, t.lamp, t.where, t.issue, users.find((u) => u.id === t.technicianId)?.name ?? t.technician].some((v) => (v || '').toLowerCase().includes(term)))
+        ),
+    [tickets, users, filter, term]
+  );
+  const filtering = term !== '' || filter !== 'ALL';
+  const emptyText = tickets.length === 0 ? 'No maintenance tickets yet. Select “+ New Report” to create the first one.' : 'No tickets match your search or filter.';
+  const lampIds = useMemo(() => LAMPS.map((l) => l.id), []);
+  const active = dialog?.mode === 'view' ? tickets.find((t) => t.id === dialog.id) : null;
+
+  const sum = summarize(tickets, now);
   const summary = [
-    { label: 'Open Faults', value: '02', color: 'text-[#e04848]', tint: 'bg-[#fde8e8]' },
-    { label: 'In Progress', value: '03', color: 'text-[#f0a82e]', tint: 'bg-[#fff3d6]' },
-    { label: 'Resolved Today', value: '05', color: 'text-[#27a85a]', tint: 'bg-[#e3f4ea]' },
-    { label: 'Avg. Response', value: '18 min', color: 'text-[#3b82f6]', tint: 'bg-[#e6edfc]' },
+    { label: 'Open Faults', value: pad2(sum.open), color: 'text-[#e04848]', tint: 'bg-[#fde8e8]' },
+    { label: 'In Progress', value: pad2(sum.inProgress), color: 'text-[#f0a82e]', tint: 'bg-[#fff3d6]' },
+    { label: 'Resolved Today', value: pad2(sum.resolvedToday), color: 'text-[#27a85a]', tint: 'bg-[#e3f4ea]' },
+    {
+      label: 'Avg. Response',
+      value: sum.avgResponseMs == null ? '—' : formatDuration(sum.avgResponseMs),
+      note: sum.avgResponseMs == null ? `Needs ${MIN_RESPONSES_FOR_AVG}+ responded tickets (${sum.responseSamples} so far)` : `From ${sum.responseSamples} tickets`,
+      color: 'text-[#3b82f6]',
+      tint: 'bg-[#e6edfc]',
+    },
   ];
+
+  const openTicket = (t) => setDialog({ mode: 'view', id: t.id });
+  const onCreate = (form) => {
+    const problem = assignmentError({ status: form.status, technicianId: form.technicianId }, users, tickets, Date.now());
+    if (problem) return problem; // shown under the technician dropdown
+    const t = createTicket(tickets, form);
+    commit([...tickets, t], `Ticket ${t.id} created.`);
+    setFilter('ALL');
+    setSearch('');
+    setDialog({ mode: 'view', id: t.id });
+    return null;
+  };
+  // Applies a change to one ticket. Returns a message (and changes nothing) if it would give an active job to an unavailable technician.
+  const apply = (t, patch, okText, resolution = '') => {
+    const next = { ...t, ...patch };
+    const problem = assignmentError({ ticket: t, status: next.status, technicianId: next.technicianId || null }, users, tickets, Date.now());
+    if (problem) return problem;
+    commit(tickets.map((x) => (x.id === t.id ? updateTicket(x, { ...x, ...patch }, Date.now(), resolution) : x)), okText);
+    return null;
+  };
+  const onPresence = (id, present) => {
+    const who = users.find((u) => u.id === id);
+    const next = setPresence(users, id, present, Date.now());
+    setUsers(next);
+    if (saveUsers(next)) setToast({ kind: 'ok', text: `${who?.name ?? 'Technician'} marked ${present ? 'on duty' : 'absent / off duty'}.` });
+    else setToast({ kind: 'error', text: 'Attendance could not be saved because the browser blocked storage. It will be lost on refresh.' });
+  };
 
   return (
     <Page>
@@ -1976,6 +2135,17 @@ const Maintenance = () => {
         subtitle="Fault reports and technician activity"
         actions={
           <div className="flex flex-wrap gap-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-[#8895a7] absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tickets..."
+                aria-label="Search maintenance tickets by number, lamp, street, issue or technician"
+                className="h-[42px] w-full sm:w-56 pl-9 pr-3 bg-white border border-[#e1e7ee] rounded-md text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-[#27a85a]/30"
+              />
+            </div>
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -1983,15 +2153,27 @@ const Maintenance = () => {
               aria-label="Filter tickets"
             >
               <option value="ALL">Filter: All</option>
-              <option value="OPEN">Filter: Open</option>
-              <option value="ASSIGNED">Filter: Assigned</option>
-              <option value="IN PROGRESS">Filter: In Progress</option>
-              <option value="RESOLVED">Filter: Resolved</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>Filter: {s.charAt(0) + s.slice(1).toLowerCase()}</option>
+              ))}
             </select>
-            <PrimaryButton>+ New Report</PrimaryButton>
+            {filtering && (
+              <button onClick={() => { setSearch(''); setFilter('ALL'); }} className="h-[42px] px-2 text-sm font-bold text-[#27a85a] hover:underline">Clear filters</button>
+            )}
+            <PrimaryButton onClick={() => setDialog({ mode: 'create' })}>+ New Report</PrimaryButton>
           </div>
         }
       />
+
+      {toast && (
+        <div
+          role={toast.kind === 'error' ? 'alert' : 'status'}
+          className={`mb-4 px-4 py-3 rounded-lg text-sm font-semibold flex items-start justify-between gap-3 ${toast.kind === 'error' ? 'bg-[#fde8e8] text-[#e04040]' : 'bg-[#e3f4ea] text-[#1f9a52]'}`}
+        >
+          <span>{toast.text}</span>
+          <button onClick={() => setToast(null)} aria-label="Dismiss message" className="leading-none text-lg -mt-0.5">×</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
         {summary.map((c) => (
@@ -1999,14 +2181,18 @@ const Maintenance = () => {
             <div>
               <div className="text-xs font-bold text-[#5b6b82] uppercase">{c.label}</div>
               <div className={`text-3xl md:text-4xl font-bold mt-3 ${c.color}`}>{c.value}</div>
+              {c.note && <div className="text-[11px] text-[#6b7a90] mt-1.5">{c.note}</div>}
             </div>
             <span className={`hidden sm:block w-9 h-9 rounded-full ${c.tint}`}></span>
           </Card>
         ))}
       </div>
 
+      <TechnicianPanel users={users} tickets={tickets} now={now} onPresence={onPresence} />
+
       <Card big className="p-4 md:p-6 pb-6 md:pb-10">
-        <CardTitle right={<Pill className="px-3 h-7 bg-[#eceff3] text-[#5b6b82] text-[11px]">SAMPLE DATA</Pill>}>Recent Maintenance Tickets</CardTitle>
+        <CardTitle right={<Pill className="px-3 h-7 bg-[#eceff3] text-[#5b6b82] text-[11px]">PROTOTYPE · SAVED IN THIS BROWSER</Pill>}>Recent Maintenance Tickets</CardTitle>
+        <p className="text-xs text-[#6b7a90] -mt-2 mb-4">Tickets you create are saved in this browser only (temporary prototype storage). They are not shared with other devices or users until a maintenance backend is added.</p>
         <div className="hidden md:block">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -2016,7 +2202,8 @@ const Maintenance = () => {
               <th className="py-4">Issue</th>
               <th className="py-4">Priority</th>
               <th className="py-4">Status</th>
-              <th className="py-4 rounded-r-lg">Updated</th>
+              <th className="py-4">Updated</th>
+              <th className="py-4 pr-4 rounded-r-lg"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
@@ -2024,15 +2211,22 @@ const Maintenance = () => {
               <tr key={t.id} className={`h-[65px] ${i % 2 === 1 ? 'bg-[#f8fafc]' : ''}`}>
                 <td className="pl-4 font-bold text-sm">{t.id}</td>
                 <td className="text-sm"><span className="font-bold">{t.lamp}</span> • {t.where}</td>
-                <td className="text-sm">{t.issue}</td>
+                <td className="text-sm pr-3 max-w-[260px]">
+                  <div className="truncate" title={t.issue}>{t.issue}</div>
+                  <div className="text-xs text-[#6b7a90] truncate flex items-center gap-1.5">
+                    {techOf(t) && <Dot available={availability(techOf(t), tickets, now).available} />}
+                    <span className="truncate">{techName(t) ? `Technician: ${techName(t)}` : 'Unassigned'}</span>
+                  </div>
+                </td>
                 <td><Pill className={`w-[122px] h-9 ${PRIORITY_BADGE[t.priority]}`}>{t.priority}</Pill></td>
                 <td><Pill className={`w-[122px] h-9 ${TICKET_STATUS_BADGE[t.status]}`}>{t.status}</Pill></td>
-                <td className="text-sm text-[#6b7a90]">{t.updated}</td>
+                <td className="text-sm text-[#6b7a90]">{formatStamp(t.updatedAt, now)}</td>
+                <td className="pr-4 text-right"><button onClick={() => openTicket(t)} aria-label={`View ticket ${t.id}`} className="h-9 px-4 bg-white border border-[#e1e7ee] rounded-lg text-sm font-semibold text-[#14233c] hover:bg-gray-50">View</button></td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-10 text-center text-sm text-[#6b7a90]">No tickets with this status.</td>
+                <td colSpan={7} className="py-10 text-center text-sm text-[#6b7a90]">{emptyText}</td>
               </tr>
             )}
           </tbody>
@@ -2042,21 +2236,42 @@ const Maintenance = () => {
         <ul className="md:hidden">
           {rows.map((t) => (
             <li key={t.id} className="py-4 border-b-2 border-[#e6ebf1] last:border-b-0">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-bold text-sm">{t.id}</span>
-                <span className="text-xs text-[#6b7a90]">{t.updated}</span>
-              </div>
-              <div className="text-sm mt-1">{t.issue}</div>
-              <div className="text-xs text-[#6b7a90] mt-0.5"><span className="font-bold text-[#14233c]">{t.lamp}</span> • {t.where}</div>
-              <div className="flex gap-2 mt-3">
-                <Pill className={`px-3 h-8 ${PRIORITY_BADGE[t.priority]}`}>{t.priority}</Pill>
-                <Pill className={`px-3 h-8 ${TICKET_STATUS_BADGE[t.status]}`}>{t.status}</Pill>
-              </div>
+              <button onClick={() => openTicket(t)} aria-label={`View ticket ${t.id}`} className="block w-full text-left">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-sm">{t.id}</span>
+                  <span className="text-xs text-[#6b7a90]">{formatStamp(t.updatedAt, now)}</span>
+                </div>
+                <div className="text-sm mt-1 break-words">{t.issue}</div>
+                <div className="text-xs text-[#6b7a90] mt-0.5"><span className="font-bold text-[#14233c]">{t.lamp}</span> • {t.where} • {techName(t) || 'Unassigned'}</div>
+                <div className="flex gap-2 mt-3">
+                  <Pill className={`px-3 h-8 ${PRIORITY_BADGE[t.priority]}`}>{t.priority}</Pill>
+                  <Pill className={`px-3 h-8 ${TICKET_STATUS_BADGE[t.status]}`}>{t.status}</Pill>
+                </div>
+              </button>
             </li>
           ))}
-          {rows.length === 0 && <li className="py-10 text-center text-sm text-[#6b7a90]">No tickets with this status.</li>}
+          {rows.length === 0 && <li className="py-10 text-center text-sm text-[#6b7a90]">{emptyText}</li>}
         </ul>
       </Card>
+
+      {dialog?.mode === 'create' && (
+        <TicketModal mode="create" ticketNumber={nextTicketNumber(tickets)} lampIds={lampIds} users={users} tickets={tickets} now={now} onClose={() => setDialog(null)} onCreate={onCreate} />
+      )}
+      {active && (
+        <TicketModal
+          key={active.id}
+          mode="view"
+          ticket={active}
+          lampIds={lampIds}
+          users={users}
+          tickets={tickets}
+          now={now}
+          onClose={() => setDialog(null)}
+          onSave={(form) => apply(active, form, `Ticket ${active.id} updated.`)}
+          onStatus={(status, techPatch = {}) => apply(active, { status, ...techPatch }, `Ticket ${active.id} is now ${status}.`)}
+          onResolve={(note) => { apply(active, { status: 'RESOLVED' }, `Ticket ${active.id} marked as resolved.`, note); }}
+        />
+      )}
     </Page>
   );
 };
@@ -2324,6 +2539,7 @@ const App = () => {
   const liveState = useLiveLamps();
   const merged = useMemo(() => mergeLive(DEVICES, liveState), [liveState]);
   const { mode, hasTest, lastSync } = merged;
+  const receivedAt = liveState.receivedAt;
   // The receiver re-sends its snapshot every 5 s. Keep the same `devices` array while nothing in it has changed,
   // so the screens (and the map markers) are not re-rendered for nothing. The data itself is untouched.
   const devicesKey = JSON.stringify(merged.devices);
@@ -2345,6 +2561,44 @@ const App = () => {
     setCurrentScreen(s);
   }, []);
   const openDetails = useCallback(() => setCurrentScreen('details'), []);
+
+  // ---- help, tutorial, fault details, notifications ----
+  const [helpTopic, setHelpTopic] = useState(null);
+  const [faultId, setFaultId] = useState(null);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [waited, setWaited] = useState(false); // after 4 s without the receiver we stop saying "connecting"
+  useEffect(() => {
+    const id = setTimeout(() => setWaited(true), 4000);
+    return () => clearTimeout(id);
+  }, []);
+  const connecting = mode !== 'live' && !waited;
+  useEffect(() => {
+    syncNotifications(devices, mode);
+  }, [devices, mode]);
+  const openHelp = useCallback((topic) => {
+    setHelpTopic(topic);
+    setCurrentScreen('manual');
+  }, []);
+  const openFault = useCallback((id) => setFaultId(id), []);
+  const gotoScreen = useCallback(
+    (s) => {
+      if (s === 'help' || s === 'manual') setHelpTopic(null);
+      goto(s);
+    },
+    [goto]
+  );
+  const startTutorial = useCallback(() => setShowTutorial(true), []);
+  const closeTutorial = useCallback((how) => {
+    writeTutorialFlag(how);
+    setShowTutorial(false);
+    setMenuOpen(false);
+    setCurrentScreen('dashboard');
+  }, []);
+  const ensureMenu = useCallback((want) => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) setMenuOpen(want);
+  }, []);
+  const ctx = useMemo(() => ({ screen: currentScreen, live: mode === 'live', openFault, openHelp }), [currentScreen, mode, openFault, openHelp]);
+  const activeFault = faultId ? describeFault(devices.find((d) => d.id === faultId)) : null;
   const detailsIds = useMemo(() => (mode === 'live' ? [] : ['L-008']), [mode]);
   const toggleCompactMap = useCallback((on) => setShowSample(!on), [setShowSample]);
 
@@ -2378,14 +2632,21 @@ const App = () => {
   if (currentScreen === 'login') {
     return (
       <>
-        <Login onSignIn={() => setCurrentScreen('dashboard')} />
+        <Login
+          onSignIn={() => {
+            setCurrentScreen('dashboard');
+            if (!readTutorialFlag()) setShowTutorial(true); // offered once; Skip is always available
+          }}
+        />
         {showIntro && <CityIntro onDone={() => setShowIntro(false)} />}
       </>
     );
   }
 
   return (
+    <AppCtx.Provider value={ctx}>
     <div className="font-sans bg-[#f3f6f9] min-h-screen">
+      <a href="#main-content" className="lm-skip">Skip to main content</a>
       <header className="lg:hidden fixed top-0 inset-x-0 h-14 z-30 bg-[#13223b] text-white flex items-center gap-3 px-3">
         <button
           onClick={() => setMenuOpen(true)}
@@ -2396,13 +2657,14 @@ const App = () => {
         >
           <Menu className="w-6 h-6" />
         </button>
-        <div className="w-8 h-8 bg-[#27a85a] rounded-full flex items-center justify-center font-bold text-xs">SL</div>
+        <img src={LOGO_SRC} alt="" width="32" height="32" className="w-8 h-8 shrink-0 object-contain" />
         <span className="font-bold text-lg">LUMINARA</span>
         <span className="ml-auto text-xs font-semibold text-[#cdd7e5]">Barangay 6</span>
+        <NotificationCenter compact live={mode === 'live'} onOpenFault={openFault} />
         <div className="w-8 h-8 rounded-full bg-[#e0f3e8] text-[#27a85a] font-bold text-sm flex items-center justify-center">A</div>
       </header>
       {menuOpen && <div className="lg:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
-      <Sidebar currentScreen={currentScreen} setScreen={goto} open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Sidebar currentScreen={currentScreen} setScreen={gotoScreen} open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div
         className={`fixed bottom-3 right-3 z-30 px-3 py-1.5 rounded-md text-[11px] font-bold shadow ${
           mode === 'live' ? (hasTest ? 'bg-[#fff3d6] text-[#c98a0a]' : 'bg-[#e3f4ea] text-[#1f9a52]') : 'bg-[#eceff3] text-[#5b6b82]'
@@ -2410,8 +2672,10 @@ const App = () => {
       >
         {mode === 'live' ? (hasTest ? 'LIVE + TEST DATA' : 'LIVE DATA') : 'DEMO DATA — receiver not connected'}
       </div>
-      {currentScreen === 'dashboard' && <DashboardScreen setScreen={goto} devices={devices} mode={mode} lastSync={lastSync} />}
-      {currentScreen === 'monitoring' && <MonitoringScreen setScreen={goto} devices={devices} mode={mode} />}
+      {currentScreen === 'dashboard' && (
+        <DashboardScreen setScreen={goto} devices={devices} mode={mode} lastSync={lastSync} receivedAt={receivedAt} connecting={connecting} onOpenFault={openFault} />
+      )}
+      {currentScreen === 'monitoring' && <MonitoringScreen setScreen={goto} devices={devices} mode={mode} onOpenFault={openFault} />}
       {currentScreen === 'map' && !MapComp && (
         <Page>
           <Header title="Streetlight Map" subtitle="Loading the map…" />
@@ -2442,7 +2706,35 @@ const App = () => {
       {currentScreen === 'settings' && (
         <SettingsScreen Page={Page} Header={Header} Card={Card} compactMap={!showSample} onCompactMapChange={toggleCompactMap} />
       )}
+      {(currentScreen === 'help' || currentScreen === 'manual') && (
+        <HelpCenter
+          Page={Page}
+          Header={Header}
+          Card={Card}
+          view={currentScreen}
+          topic={helpTopic}
+          onTopic={setHelpTopic}
+          onNavigate={gotoScreen}
+          onStartTutorial={startTutorial}
+        />
+      )}
+      {activeFault && (
+        <FaultDetail
+          fault={activeFault}
+          onClose={() => setFaultId(null)}
+          onOpenHelp={(t) => {
+            setFaultId(null);
+            openHelp(t);
+          }}
+          onOpenStreetlights={() => {
+            setFaultId(null);
+            goto('monitoring');
+          }}
+        />
+      )}
+      {showTutorial && <Tutorial onNavigate={goto} onEnsureMenu={ensureMenu} onClose={closeTutorial} />}
     </div>
+    </AppCtx.Provider>
   );
 };
 

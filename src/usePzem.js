@@ -10,15 +10,15 @@ const getJson = async (url, signal) => {
 
 // Latest reading + status. reachable=false when the receiver can't be reached (e.g. demo mode).
 export function usePzem(pollMs = 5000) {
-  const [state, setState] = useState({ view: null, reachable: true, loaded: false });
+  const [state, setState] = useState({ view: null, reachable: true, loaded: false, at: 0 });
   useEffect(() => {
     const ac = new AbortController();
     const load = () => {
       if (typeof document !== 'undefined' && document.hidden) return; // nobody is looking: skip
       getJson('/api/pzem', ac.signal)
-        .then((view) => setState({ view, reachable: true, loaded: true }))
+        .then((view) => setState({ view, reachable: true, loaded: true, at: Date.now() }))
         .catch((e) => {
-          if (e.name !== 'AbortError') setState({ view: null, reachable: false, loaded: true });
+          if (e.name !== 'AbortError') setState({ view: null, reachable: false, loaded: true, at: Date.now() });
         });
     };
     load();

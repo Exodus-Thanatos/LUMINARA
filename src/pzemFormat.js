@@ -68,3 +68,48 @@ export const HISTORY_OPTIONS = [
 // Recharts wants plain rows; gaps (no samples) stay null so the chart shows a break instead of a false zero.
 export const historyRows = (history) =>
   (history?.points || []).map((p) => ({ t: p.t, powerW: p.powerW, maxPowerW: p.maxPowerW }));
+
+// Same, with every value the receiver records per point (used by the metric selector). Gaps stay null.
+export const historySeries = (history) =>
+  (history?.points || []).map((p) => ({
+    t: p.t,
+    powerW: p.powerW ?? null,
+    voltageV: p.voltageV ?? null,
+    currentA: p.currentA ?? null,
+    energyKwh: p.energyKwh ?? null,
+  }));
+
+// What the history chart can show: only these values are recorded by the receiver (frequency and power factor are not).
+export const HISTORY_METRICS = [
+  { id: 'powerW', label: 'Power', unit: 'W', name: 'Average active power' },
+  { id: 'voltageV', label: 'Voltage', unit: 'V', name: 'Average voltage' },
+  { id: 'currentA', label: 'Current', unit: 'A', name: 'Average current' },
+  { id: 'energyKwh', label: 'Energy counter', unit: 'kWh', name: 'Meter energy counter' },
+];
+
+// Guide thresholds. They are defaults for a 230 V / 60 Hz supply, NOT settings: the Settings page cannot change them yet.
+// Current, power and energy have no threshold because the rating of the monitored feed is not known to the system.
+// level: normal | warning | critical | none (no threshold defined, or not meaningful right now)
+export const THRESHOLD_NOTE = 'Guide ranges for a 230 V, 60 Hz supply. They are not configurable yet.';
+export function readingLevel(key, value, reading) {
+  const none = { level: 'none', label: 'No threshold set' };
+  if (typeof value !== 'number' || !Number.isFinite(value)) return { level: 'none', label: 'Unavailable' };
+  if (key === 'voltage') {
+    if (value >= 207 && value <= 253) return { level: 'normal', label: 'Normal' };
+    if (value < 195) return { level: 'critical', label: 'Very low' };
+    if (value > 265) return { level: 'critical', label: 'Very high' };
+    return { level: 'warning', label: value < 207 ? 'Low' : 'High' };
+  }
+  if (key === 'frequency') {
+    if (value >= 59 && value <= 61) return { level: 'normal', label: 'Normal' };
+    if (value >= 58 && value <= 62) return { level: 'warning', label: value < 59 ? 'Low' : 'High' };
+    return { level: 'critical', label: value < 58 ? 'Very low' : 'Very high' };
+  }
+  if (key === 'pf') {
+    if (!reading || reading.power < 5) return { level: 'none', label: 'No load' }; // power factor means nothing without a load
+    if (value >= 0.85) return { level: 'normal', label: 'Good' };
+    if (value >= 0.7) return { level: 'warning', label: 'Fair' };
+    return { level: 'critical', label: 'Poor' };
+  }
+  return none;
+}
