@@ -54,7 +54,7 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 # 5. Technologies Used
 
 **Hardware**
-- ESP32 (WROOM) for lamp nodes and the panel controller
+- ESP32 (Devkit) for lamp nodes and the panel controller
 - SX1278 LoRa module (433 MHz)
 - BH1750 digital light sensor
 - PZEM-004T v3 (100 A) with split-core CT
@@ -64,7 +64,7 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 **Firmware / Software**
 - Arduino (C++) via Arduino IDE
 - Arduino libraries: [libraries include LINES, e.g. LoRa, BH1750, WiFi, etc.]
-- Dashboard: [HTML, CSS, Node.js, React, MYSQL]
+- Dashboard: [HTML, CSS, Node.js, React, PostgreSQL]
 - Initial dashboard code was generated through wireframe only for now.
 
 **Tools:** GitHub, Canva/AutoCAD (diagrams), Microsoft Word, Docs (manuscript), VSCode
@@ -99,8 +99,8 @@ Current implementation (bench prototype):
 1. Upload code on lamp node(s).
 2. Power both ESP32s with LoRa and BH1750 attached.
 3. The gateway ESP node connects to each other over LoRa; each node replies with its light reading.
-4. The dashboard shows each lamp's state and logs it. (Serial Monitor for now)
-5. Use the Switching Control page to send ON/OFF to the relay (contactor stand-in). (TBA)
+4. The dashboard shows each lamp's state and logs it. (Basic Functionality achieved)
+5. Use the Switching Control page to send ON/OFF to the relay (contactor stand-in). (Relay functionality reached)
 
 [Prone to early changes due to early age of project prototype]
 
@@ -125,17 +125,16 @@ Technical Critique: Moneth Bersamin-Matala
 **Implemented**
 - Two-board LoRa link between ESP32 + SX1278 modules (about 480 m farthest tested)
 - BH1750 readings (non-calibrated)
-
-**In progress**
 - Per-lamp sensing and multi-node LoRa polling
-- Dashboard pages and logging finalization
-- LoRa Polling
-- Circuit Breaker setup
+- Dashboard pages and logging
+- Centralized remote feed control (switching)
+  
+**In progress**
+- Dashboard finalization
+- Circuit Breaker final setup
 
 **Planned**
 - Install the contactor and panel controller at the Barangay 6 breaker
-- Feed current/voltage monitoring with the PZEM-004T
-- Schedule-based switching with NTP time and browser override
 - Fault classification (lamp out, feed loss, low battery, node offline)
 - Field deployment on the straight-road lamps, with a thesis demo of 3 lamp nodes
 - Wiring and enclosure work, with the permission of the Brgy and Engr. Dept.
