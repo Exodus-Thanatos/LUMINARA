@@ -150,3 +150,12 @@ Technical Critique: Moneth Bersamin-Matala
 | References | `documentation/references/` |
 | Dashboard (GUI) source | `GUI/LUMINARA_GUI/` |
 | Other supporting files | `supporting_files/` |
+
+-------------------------------------------------------------------------------------
+
+# 11. Proposal Defense Revisions (Minor)
+**Documentation**
+- Revise SoP wording into a more positive/neutral tone (Achieved)
+- Consider IEC TS 63116 (Added)
+**Dashboard**
+- Implement a cleaner, more robust UI in dashboard overview (In Progress)
