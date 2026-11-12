@@ -37,15 +37,15 @@ The system is built from common, low-cost IoT parts. The trade-off is accuracy a
 
 | Feature | Status |
 |---|---|
-| Per-lamp light sensing at each lamp node (BH1750) | Testing Phase |
-| Point-to-point LoRa link, lamp nodes to panel controller (SX1278, 433 MHz, star topology) | Two-board link tested; multi-node polling in progress |
-| Polling of lamp nodes by the panel controller | In progress |
-| Remote ON/OFF of the feed through a contactor (relay module as demo stand-in) | In progress |
-| Schedule-based switching on the panel controller (NTP time), with browser override | Planned |
-| Feed current/voltage monitoring (PZEM-004T with split-core CT) | Planned |
-| Fault reporting: one lamp out, feed/mains loss, low node battery, node offline | In progress |
-| Dashboard (GUI): Overview, Lamp Status, Fault History, Switching Control, role-based login | In progress |
-| Dashboard record-keeping of lamp states, faults, and switching commands | In progress |
+| Per-lamp light sensing at each lamp node (BH1750) | Basic Functionality (BF) Reached |
+| Point-to-point LoRa link, lamp nodes to panel controller (SX1278, 433 MHz, star topology) | Two-board link tested; multi-node polling BF working |
+| Polling of lamp nodes by the panel controller | BF Reached |
+| Remote ON/OFF of the feed through a contactor (relay module as demo stand-in) | Working |
+| Schedule-based switching on the panel controller (NTP time), with browser override | Working |
+| Feed current/voltage monitoring (PZEM-004T with split-core CT) | Working |
+| Fault reporting: one lamp out, feed/mains loss, low node battery, node offline | BF Reached |
+| Dashboard (GUI): Overview, Lamp Status, Fault History, Switching Control, role-based login | BF Reached |
+| Dashboard record-keeping of lamp states, faults, and switching commands | BF Reached |
 
 **GUI functionality:** the dashboard shows each lamp's state, logs events, and lets the Engineering Department send ON/OFF commands and edit the schedule. Barangay officials get read-only access.
 
@@ -102,7 +102,7 @@ Current implementation (bench prototype):
 4. The dashboard shows each lamp's state and logs it. (Basic Functionality achieved)
 5. Use the Switching Control page to send ON/OFF to the relay (contactor stand-in). (Relay functionality reached)
 
-[Prone to early changes due to early age of project prototype]
+[Still prone to changes due to iterative prototype improvement]
 
 ------------------------------------------------------------------------------------
 
@@ -126,18 +126,18 @@ Technical Critique: Moneth Bersamin-Matala
 - Two-board LoRa link between ESP32 + SX1278 modules (about 480 m farthest tested)
 - BH1750 readings (non-calibrated)
 - Per-lamp sensing and multi-node LoRa polling
-- Dashboard pages and logging
+- Dashboard overall functionality
 - Centralized remote feed control (switching)
   
 **In progress**
 - Dashboard finalization
-- Circuit Breaker final setup
+- Circuit Breaker final setup (Mockup MCB)
 
 **Planned**
-- Install the contactor and panel controller at the Barangay 6 breaker
-- Fault classification (lamp out, feed loss, low battery, node offline)
+- Install the contactor and panel controller at the Barangay 6 breaker (Or simulate it in a similar condition)
+- Cleaner Fault classification (lamp out, feed loss, low battery, node offline)
 - Field deployment on the straight-road lamps, with a thesis demo of 3 lamp nodes
-- Wiring and enclosure work, with the permission of the Brgy and Engr. Dept.
+- ~~Wiring and enclosure work, with the permission of the Brgy and Engr. Dept.~~
 
 ------------------------------------------------------------------------------------
 
