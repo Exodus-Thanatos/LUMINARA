@@ -1,0 +1,41 @@
+{
+  "name": "luminara",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "server": "node server/server.js",
+    "test-data": "node server/send-test-data.js",
+    "test": "node --test server/server.test.js server/auth.test.js server/password.test.js server/tickets.test.js server/permissions.test.js server/pzem.test.js server/lampHealth.test.js server/history.test.js server/basic.test.js server/developer.test.js server/data.test.js server/sleep.test.js src/basicDashboard.test.js src/devShortcut.test.js src/lampHealthUi.test.js src/historyUi.test.js src/scheduleFormat.test.js src/useLiveLamps.test.js src/pzemFormat.test.js src/faultInfo.test.js src/streetlightStatus.test.js src/mapMarkers.test.js src/helpContent.test.js src/dashboardStatus.test.js src/maintenanceStore.test.js src/technicianStore.test.js src/permissions.test.js src/ticketApi.test.js src/presenceStore.test.js src/dataCsv.test.js",
+    "db:migrate": "node server/migrate.js",
+    "db:seed-admin": "node server/seed-admin.js",
+    "db:setup": "node server/migrate.js && node server/seed-admin.js",
+    "test:db": "node --test server/db.integration.test.js"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "bcryptjs": "^3.0.2",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^1.57.0",
+    "pg": "^8.13.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.6",
+    "globals": "^17.12.0",
+    "vite": "^8.3.0"
+  }
+}

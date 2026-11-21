@@ -1,0 +1,381 @@
+// Backend tests. Run with:  npm test      (Node's built-in test runner, no extra packages)
+// They use packets shaped exactly like the ones LoraIntegrated.ino's bridge posts.
+// NOTE: this proves the HTTP/backend side only. It does not exercise LoRa or the ESP32.
+import test, { before, after, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+
+process.env.DEVICE_KEY = 'test-key';
+process.env.STALE_AFTER_MS = '60000';
+process.env.OFFLINE_AFTER_MS = '90000';
+const { server, snapshot, ingest, validate, resetForTests } = await import('./server.js');
+
+let base;
+before(async () => {
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  base = `http://127.0.0.1:${server.address().port}`;
+});
+after(() => server.close());
+beforeEach(() => resetForTests());
+
+const pkt = (o = {}) => ({ type: 'BEAT', nodeId: 1, seq: 1, lux: 153.2, status: 'NORMAL_LIT', rssi: -71, ...o });
+const post = (body, key = 'test-key', raw) =>
+  fetch(`${base}/api/telemetry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(key === null ? {} : { 'X-Api-Key': key }) },
+    body: raw ?? JSON.stringify(body),
+  });
+const lamp = (n = 1) => snapshot().lamps.find((l) => l.nodeId === n);
+
+test('accepts every packet type: JOIN, ALRT, BEAT, RPT', async () => {
+  for (const [i, type] of ['JOIN', 'ALRT', 'BEAT', 'RPT'].entries()) {
+    const r = await post(pkt({ type, seq: i + 1 }));
+    assert.equal(r.status, 200, type);
+    const b = await r.json();
+    assert.equal(b.ok, true);
+    assert.equal(b.accepted, true);
+    assert.equal(b.id, 'L-001');
+    assert.equal(lamp().type, type);
+  }
+});
+
+test('stores node, seq, lux, status, rssi and timestamp from a firmware-shaped RPT', async () => {
+  await post(pkt({ type: 'RPT', nodeId: 2, seq: 7, lux: 0, status: 'TOTAL_BLACKOUT', rssi: -93 }));
+  const l = lamp(2);
+  assert.equal(l.id, 'L-002');
+  assert.equal(l.seq, 7);
+  assert.equal(l.lux, 0); // zero lux is a real reading and must stay 0
+  assert.equal(l.status, 'TOTAL_BLACKOUT');
+  assert.equal(l.rssi, -93);
+  assert.ok(Date.parse(l.lastSeen) > 0);
+  assert.equal(l.link, 'ONLINE');
+});
+
+test('every status string used by the firmware is accepted unchanged', async () => {
+  const all = ['NORMAL_LIT', 'DAYLIGHT_STANDBY', 'STANDBY', 'LOW_LIGHT', 'TOTAL_BLACKOUT', 'BLINKING/UNSTABLE', 'SENSOR_ERROR'];
+  for (const [i, status] of all.entries()) {
+    const r = await post(pkt({ seq: i + 1, status }));
+    assert.equal(r.status, 200, status);
+    assert.equal(lamp().status, status);
+  }
+});
+
+test('SENSOR_ERROR: the 0.0 placeholder lux is stored as null, not as a reading', async () => {
+  await post(pkt({ status: 'SENSOR_ERROR', lux: 0 }));
+  assert.equal(lamp().lux, null);
+  await post(pkt({ seq: 2, status: 'SENSOR_ERROR' })); // lux omitted entirely is also fine
+  assert.equal(lamp().lux, null);
+});
+
+test('missing lux is rejected for a normal status (never turned into 0)', async () => {
+  const b = pkt(); delete b.lux;
+  const r = await post(b);
+  assert.equal(r.status, 400);
+  assert.equal((await r.json()).code, 'invalid_lux');
+  assert.equal(lamp(), undefined);
+  assert.equal((await post(pkt({ lux: null }))).status, 400);
+  assert.equal((await post(pkt({ lux: '12' }))).status, 400);
+});
+
+test('ALRT is remembered as lastAlert even after a later BEAT', async () => {
+  await post(pkt({ type: 'ALRT', seq: 1, status: 'LOW_LIGHT', lux: 40 }));
+  await post(pkt({ type: 'BEAT', seq: 2, status: 'LOW_LIGHT', lux: 41 }));
+  const l = lamp();
+  assert.equal(l.type, 'BEAT');
+  assert.equal(l.lastAlert.status, 'LOW_LIGHT');
+  assert.equal(l.lastAlert.seq, 1);
+});
+
+test('malformed requests are rejected safely and nothing is stored', async () => {
+  const cases = [
+    [pkt({ type: 'HELLO' }), 'invalid_type'],
+    [pkt({ nodeId: 0 }), 'invalid_node'],
+    [pkt({ nodeId: 32 }), 'invalid_node'],
+    [pkt({ nodeId: '1' }), 'invalid_node'],
+    [pkt({ seq: -1 }), 'invalid_seq'],
+    [pkt({ seq: 1.5 }), 'invalid_seq'],
+    [pkt({ lux: -5 }), 'invalid_lux'],
+    [pkt({ lux: 1e9 }), 'invalid_lux'],
+    [pkt({ status: '' }), 'invalid_status'],
+    [pkt({ status: 'X'.repeat(25) }), 'invalid_status'],
+    [pkt({ status: '<script>' }), 'invalid_status'],
+    [pkt({ rssi: 'strong' }), 'invalid_rssi'],
+    [[1, 2, 3], 'invalid_body'],
+    [null, 'invalid_body'],
+  ];
+  for (const [body, code] of cases) {
+    const r = await post(body);
+    assert.equal(r.status, 400, code);
+    assert.equal((await r.json()).code, code);
+  }
+  const bad = await post(null, 'test-key', '{not json');
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).code, 'invalid_json');
+  assert.equal(snapshot().lamps.length, 0);
+});
+
+test('oversized body gets 413', async () => {
+  const r = await post(null, 'test-key', JSON.stringify({ pad: 'x'.repeat(3000) }));
+  assert.equal(r.status, 413);
+});
+
+test('authentication is enforced', async () => {
+  assert.equal((await post(pkt(), 'wrong-key')).status, 401);
+  assert.equal((await post(pkt(), null)).status, 401);
+  assert.equal((await post(pkt(), '')).status, 401);
+  assert.equal(snapshot().lamps.length, 0);
+  assert.equal((await post(pkt())).status, 200);
+});
+
+test('unknown routes 404, GET /api/lamps works', async () => {
+  assert.equal((await fetch(`${base}/nope`)).status, 404);
+  const r = await fetch(`${base}/api/lamps`);
+  assert.equal(r.status, 200);
+  const s = await r.json();
+  assert.equal(s.offlineAfterMs, 90000);
+  assert.equal(s.staleAfterMs, 60000);
+});
+
+test('a report updates only its own node', async () => {
+  await post(pkt({ nodeId: 1, seq: 1, status: 'NORMAL_LIT' }));
+  await post(pkt({ nodeId: 2, seq: 1, status: 'LOW_LIGHT', lux: 40 }));
+  await post(pkt({ nodeId: 1, seq: 2, status: 'TOTAL_BLACKOUT', lux: 0 }));
+  assert.equal(lamp(1).status, 'TOTAL_BLACKOUT');
+  assert.equal(lamp(2).status, 'LOW_LIGHT');
+  assert.equal(snapshot().lamps.length, 2);
+});
+
+test('duplicate seq (a retry) does not change data or the count', async () => {
+  await post(pkt({ seq: 5, lux: 100 }));
+  const r = await post(pkt({ seq: 5, lux: 999, status: 'LOW_LIGHT' }));
+  assert.equal(r.status, 200);
+  const b = await r.json();
+  assert.equal(b.duplicate, true);
+  assert.equal(b.accepted, false);
+  assert.equal(lamp().lux, 100);
+  assert.equal(lamp().status, 'NORMAL_LIT');
+  assert.equal(lamp().rxCount, 1);
+});
+
+test('an older seq cannot overwrite newer data (409)', async () => {
+  await post(pkt({ seq: 50, lux: 100 }));
+  const r = await post(pkt({ seq: 40, lux: 5, status: 'TOTAL_BLACKOUT' }));
+  assert.equal(r.status, 409);
+  const b = await r.json();
+  assert.equal(b.code, 'stale_seq');
+  assert.equal(b.latestSeq, 50);
+  assert.equal(lamp().seq, 50);
+  assert.equal(lamp().status, 'NORMAL_LIT');
+});
+
+test('seq restart after power loss (small seq) is accepted and counted', async () => {
+  await post(pkt({ seq: 120, lux: 100 }));
+  const r = await post(pkt({ seq: 1, type: 'RPT', lux: 150 }));
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).restart, true);
+  assert.equal(lamp().seq, 1);
+  assert.equal(lamp().restarts, 1);
+  assert.equal((await post(pkt({ seq: 2 }))).status, 200); // and counting up works again
+});
+
+test('seq regression after the node was OFFLINE is accepted as a restart (no stuck node)', () => {
+  const t0 = 1_000_000;
+  ingest(validate(pkt({ seq: 500 })).packet, t0);
+  const r = ingest(validate(pkt({ seq: 30 })).packet, t0 + 91_000);
+  assert.equal(r.code, 200);
+  assert.equal(r.body.restart, true);
+});
+
+test('deep sleep keeps counting: a normal seq increase after a long silence is a plain accept', () => {
+  const t0 = 1_000_000;
+  ingest(validate(pkt({ seq: 100 })).packet, t0);
+  const r = ingest(validate(pkt({ seq: 101 })).packet, t0 + 3_600_000);
+  assert.equal(r.code, 200);
+  assert.equal(r.body.restart, undefined);
+});
+
+test('link health follows the configured thresholds (ONLINE -> STALE -> OFFLINE) and never changes lamp status', () => {
+  const t0 = 2_000_000;
+  ingest(validate(pkt({ status: 'NORMAL_LIT' })).packet, t0);
+  const at = (ms) => snapshot(t0 + ms).lamps[0];
+  assert.equal(at(0).link, 'ONLINE');
+  assert.equal(at(60_000).link, 'ONLINE'); // exactly on the threshold is still fresh
+  assert.equal(at(60_001).link, 'STALE');
+  assert.equal(at(90_000).link, 'STALE');
+  assert.equal(at(90_001).link, 'OFFLINE');
+  for (const ms of [0, 70_000, 200_000]) assert.equal(at(ms).status, 'NORMAL_LIT'); // lamp condition untouched
+  assert.equal(at(200_000).ageMs, 200_000);
+});
+
+test('a duplicate refreshes the "last seen" time (node is alive) but not the data', () => {
+  const t0 = 3_000_000;
+  ingest(validate(pkt({ seq: 9 })).packet, t0);
+  ingest(validate(pkt({ seq: 9, lux: 1 })).packet, t0 + 80_000);
+  const l = snapshot(t0 + 100_000).lamps[0];
+  assert.equal(l.link, 'ONLINE');
+  assert.equal(l.lux, 153.2);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2: relay-control state is also pushed over /api/stream (event: control).
+// The existing GET/POST /api/control and GET /api/command contracts must not change.
+// ---------------------------------------------------------------------------
+const openStream = async () => {
+  const ac = new AbortController();
+  const r = await fetch(`${base}/api/stream`, { signal: ac.signal });
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  const events = [];
+  let buf = '';
+  (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const ev = /event: (\w+)/.exec(block);
+          const d = /data: (.*)/.exec(block);
+          if (ev && d) events.push({ event: ev[1], data: JSON.parse(d[1]) });
+        }
+      }
+    } catch {
+      /* aborted by the test */
+    }
+  })();
+  const waitFor = async (pred, ms = 1500) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      const f = events.find(pred);
+      if (f) return f;
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    throw new Error('timed out waiting for stream event');
+  };
+  return { events, waitFor, close: () => ac.abort() };
+};
+const controlEvents = (s) => s.events.filter((e) => e.event === 'control');
+const relayPoll = (applied, key = 'test-key') =>
+  fetch(`${base}/api/command${applied ? `?applied=${applied}` : ''}`, { headers: { 'X-Api-Key': key } });
+const postControl = (on) =>
+  fetch(`${base}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on }) });
+
+test('stream sends the current control state on connect, next to the usual snapshot', async () => {
+  const s = await openStream();
+  try {
+    await s.waitFor((e) => e.event === 'snapshot');
+    const c = await s.waitFor((e) => e.event === 'control');
+    assert.deepEqual(c.data, { want: null, applied: null, controllerOnline: false, pending: false });
+  } finally {
+    s.close();
+  }
+});
+
+test('a dashboard command is pushed immediately; the relay confirmation is pushed the moment it reports', async () => {
+  const s = await openStream();
+  try {
+    await s.waitFor((e) => e.event === 'control');
+    assert.equal((await postControl(true)).status, 200);
+    const sent = await s.waitFor((e) => e.event === 'control' && e.data.want === true);
+    assert.equal(sent.data.pending, true);
+    assert.equal(sent.data.applied, null); // a request is not a result
+
+    assert.equal((await relayPoll('on')).status, 200);
+    const done = await s.waitFor((e) => e.event === 'control' && e.data.applied === true);
+    assert.equal(done.data.pending, false);
+    assert.equal(done.data.controllerOnline, true);
+  } finally {
+    s.close();
+  }
+});
+
+test('no push when nothing changed (repeated relay polls are silent); a wrong key pushes nothing', async () => {
+  const s = await openStream();
+  try {
+    await s.waitFor((e) => e.event === 'control');
+    await relayPoll('off'); // first contact: relay comes online and reports OFF -> one push
+    await s.waitFor((e) => e.event === 'control' && e.data.controllerOnline === true);
+    const n = controlEvents(s).length;
+    await relayPoll('off');
+    await relayPoll('off');
+    assert.equal((await relayPoll('on', 'wrong-key')).status, 401);
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(controlEvents(s).length, n);
+  } finally {
+    s.close();
+  }
+});
+
+test('existing control contract is unchanged: GET/POST /api/control shape and /api/command reply', async () => {
+  const c0 = await (await fetch(`${base}/api/control`)).json();
+  assert.deepEqual(Object.keys(c0).sort(), ['applied', 'controllerOnline', 'pending', 'want']);
+  assert.equal((await postControl('yes')).status, 400); // still validated
+  const posted = await (await postControl(false)).json();
+  assert.equal(posted.want, false);
+  assert.equal(posted.pending, true);
+  const reply = await (await relayPoll('on')).json();
+  assert.equal(reply.on, false); // the relay still gets { on: want }...
+  assert.match(reply.onTime, /^\d\d:\d\d$/); // ...plus the dashboard schedule times it follows
+  assert.match(reply.offTime, /^\d\d:\d\d$/);
+  assert.equal((await relayPoll(undefined, 'wrong-key')).status, 401);
+});
+
+// ---------------------------------------------------------------------------
+// PZEM extension monitoring: separate endpoints, separate data.
+// ---------------------------------------------------------------------------
+const pzemBody = (over = {}) => ({ ok: true, seq: 1, voltage: 230.1, current: 2.5, power: 570.2, energy: 3.21, frequency: 60, pf: 0.98, ...over });
+const postPzem = (body, key = 'test-key') =>
+  fetch(`${base}/api/pzem`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Api-Key': key }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+
+test('POST /api/pzem needs the device key; GET /api/pzem starts as "none"', async () => {
+  assert.equal((await postPzem(pzemBody(), 'wrong')).status, 401);
+  assert.equal((await fetch(`${base}/api/pzem`)).status, 200);
+  assert.equal((await (await fetch(`${base}/api/pzem`)).json()).status, 'none');
+});
+
+test('a posted PZEM reading shows up on GET /api/pzem and in the history', async () => {
+  const r = await postPzem(pzemBody());
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true, accepted: true, duplicate: false });
+  const v = await (await fetch(`${base}/api/pzem`)).json();
+  assert.equal(v.status, 'live');
+  assert.equal(v.reading.voltage, 230.1);
+  assert.equal(v.reading.power, 570.2);
+  const h = await (await fetch(`${base}/api/pzem/history?range=1h`)).json();
+  assert.equal(h.points.length, 60);
+  assert.equal(h.points.filter((p) => p.samples > 0).length, 1);
+  assert.equal((await fetch(`${base}/api/pzem/history?range=bogus`)).status, 400);
+});
+
+test('PZEM input is validated: bad JSON, bad values and oversize bodies are refused', async () => {
+  assert.equal((await postPzem('{nope')).status, 400);
+  const bad = await postPzem(pzemBody({ voltage: 9999 }));
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).code, 'invalid_voltage');
+  assert.equal((await postPzem(JSON.stringify({ ok: false, reason: 'x'.repeat(2000) }))).status, 413);
+});
+
+test('PZEM data is kept apart: it never appears in lamp telemetry, the stream snapshot or relay control', async () => {
+  await postPzem(pzemBody());
+  const lamps = await (await fetch(`${base}/api/lamps`)).json();
+  assert.deepEqual(lamps.lamps, []);
+  assert.equal(JSON.stringify(lamps).includes('voltage'), false);
+  const control = await (await fetch(`${base}/api/control`)).json();
+  assert.deepEqual(Object.keys(control).sort(), ['applied', 'controllerOnline', 'pending', 'want']);
+  // and the other way round: relay and lamp traffic does not touch the PZEM state
+  await fetch(`${base}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: true }) });
+  await fetch(`${base}/api/command?applied=on`, { headers: { 'X-Api-Key': 'test-key' } });
+  const v = await (await fetch(`${base}/api/pzem`)).json();
+  assert.equal(v.status, 'live');
+  assert.equal(v.reading.voltage, 230.1);
+});
+
+test('a "meter not answering" packet is accepted and reported as pzem_offline', async () => {
+  await postPzem(pzemBody({ seq: 1 }));
+  assert.equal((await postPzem({ ok: false, seq: 2, errors: 5, reason: 'no_response' })).status, 200);
+  const v = await (await fetch(`${base}/api/pzem`)).json();
+  assert.equal(v.status, 'pzem_offline');
+  assert.equal(v.errors, 5);
+});
